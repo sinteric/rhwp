@@ -12754,7 +12754,15 @@ impl LayoutEngine {
                             } else {
                                 0.0
                             };
-                        if !is_column_top {
+                        // Hancom keeps the space before (prev) at the top of the
+                        // first page and after a forced page break; it trims it
+                        // only at a natural page/column break.
+                        let keeps_top_spacing = para_index == 0
+                            || matches!(
+                                para.column_type,
+                                crate::model::paragraph::ColumnBreakType::Page
+                            );
+                        if !is_column_top || keeps_top_spacing {
                             let spacing_before = styles
                                 .para_styles
                                 .get(ps_id)
