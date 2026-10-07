@@ -1,0 +1,6 @@
+packages: []
+
+# Preserve the alias target resolved by the existing npm lockfile. pnpm import
+# otherwise resolves @typescript/old to 6.0.2 rather than the locked 6.0.3.
+overrides:
+  "@typescript/typescript6>@typescript/old": "npm:typescript@6.0.3"

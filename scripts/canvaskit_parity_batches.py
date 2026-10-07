@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STUDIO_ROOT = ROOT / "rhwp-studio"
 DEFAULT_MANIFEST = ROOT / "scripts" / "renderer_baseline_manifest.json"
 PLAN_DOC = ROOT / "docs" / "canvaskit-parity-implementation.md"
-NPM_CMD = "npm.cmd" if sys.platform == "win32" else "npm"
+PNPM_CMD = shutil.which("pnpm") or ("pnpm.cmd" if sys.platform == "win32" else "pnpm")
 CARGO_CMD = "cargo.exe" if sys.platform == "win32" else "cargo"
 
 BATCH_NAMES = {
@@ -140,7 +140,7 @@ def batch_jobs() -> dict[int, list[dict[str, Any]]]:
             job(
                 "studio-canvaskit-font-coverage",
                 "CanvasKit font-coverage e2e (browser + WASM)",
-                [NPM_CMD, "run", "e2e:canvaskit-font-coverage"],
+                [PNPM_CMD, "run", "e2e:canvaskit-font-coverage"],
                 cwd=STUDIO_ROOT,
                 heavy=True,
             ),
@@ -222,14 +222,14 @@ def skip_reason(entry: dict[str, Any], include_heavy: bool) -> str | None:
         return f"missing {CARGO_CMD} on PATH"
     if command0 in {"node"} and not which_or_none("node"):
         return "missing node on PATH"
-    if command0 in {NPM_CMD, "npm", "npm.cmd"} and not which_or_none(NPM_CMD):
-        return f"missing {NPM_CMD} on PATH"
+    if command0 in {PNPM_CMD, "pnpm", "pnpm.cmd"} and not which_or_none(PNPM_CMD):
+        return f"missing {PNPM_CMD} on PATH"
     cwd = Path(entry["cwd"])
     if not cwd.exists():
         return f"missing working directory: {repo_relative(cwd)}"
-    if cwd == STUDIO_ROOT and command0 in {"node", NPM_CMD, "npm", "npm.cmd"}:
+    if cwd == STUDIO_ROOT and command0 in {"node", PNPM_CMD, "pnpm", "pnpm.cmd"}:
         if not (STUDIO_ROOT / "node_modules").exists():
-            return "missing rhwp-studio/node_modules (run npm install in rhwp-studio)"
+            return "missing rhwp-studio/node_modules (run mise run install at the repository root)"
     if entry["id"] == "renderer-baseline-readiness":
         if not DEFAULT_MANIFEST.exists():
             return "missing scripts/renderer_baseline_manifest.json"

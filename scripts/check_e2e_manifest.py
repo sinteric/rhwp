@@ -92,12 +92,12 @@ def check_naming(rows: dict[str, dict]) -> None:
 
 def check_wiring(files: set[str], rows: dict[str, dict]) -> None:
     pkg = json.loads((ROOT / "rhwp-studio" / "package.json").read_text(encoding="utf-8"))
-    npm_targets: dict[str, set[str]] = {}
+    pnpm_targets: dict[str, set[str]] = {}
     for script_name, cmd in pkg.get("scripts", {}).items():
         for m in re.finditer(r"e2e/([a-zA-Z0-9._-]+\.mjs)", cmd):
-            npm_targets.setdefault(m.group(1), set()).add(script_name)
+            pnpm_targets.setdefault(m.group(1), set()).add(script_name)
             if m.group(1) not in files:
-                errors.append(f"배선 실재 위반: npm script '{script_name}' → e2e/{m.group(1)} 부재")
+                errors.append(f"배선 실재 위반: pnpm script '{script_name}' → e2e/{m.group(1)} 부재")
     ci_targets: set[str] = set()
     for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
         for m in re.finditer(r"e2e/([a-zA-Z0-9._-]+\.mjs)", wf.read_text(encoding="utf-8")):
@@ -108,16 +108,16 @@ def check_wiring(files: set[str], rows: dict[str, dict]) -> None:
     # 배선 열 ↔ 실제 배선 교차 대조 (표가 주장하는 배선이 실재하는지, 역도 성립하는지)
     for name, r in sorted(rows.items()):
         w = r["wiring"]
-        claims_npm = w.startswith("npm")
+        claims_pnpm = w.startswith("pnpm")
         claims_ci = "CI" in w
-        if claims_npm and name not in npm_targets:
-            errors.append(f"배선 열 불일치: {name} — 표는 '{w}' 주장하나 npm script 에 없음")
+        if claims_pnpm and name not in pnpm_targets:
+            errors.append(f"배선 열 불일치: {name} — 표는 '{w}' 주장하나 pnpm script 에 없음")
         if claims_ci and name not in ci_targets:
             errors.append(f"배선 열 불일치: {name} — 표는 '{w}' 주장하나 워크플로에 없음")
-        if not claims_npm and not claims_ci and w not in PLACEHOLDER and w != "수동":
-            errors.append(f"배선 열 열거 위반: {name} — '{w}' (npm …/CI/npm+CI/수동)")
-        if name in npm_targets and not claims_npm:
-            errors.append(f"배선 열 불일치: {name} — npm script({', '.join(sorted(npm_targets[name]))}) 배선인데 표는 '{w}'")
+        if not claims_pnpm and not claims_ci and w not in PLACEHOLDER and w != "수동":
+            errors.append(f"배선 열 열거 위반: {name} — '{w}' (pnpm …/CI/pnpm+CI/수동)")
+        if name in pnpm_targets and not claims_pnpm:
+            errors.append(f"배선 열 불일치: {name} — pnpm script({', '.join(sorted(pnpm_targets[name]))}) 배선인데 표는 '{w}'")
         if name in ci_targets and not claims_ci:
             errors.append(f"배선 열 불일치: {name} — 워크플로 배선인데 표는 '{w}'")
 

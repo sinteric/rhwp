@@ -17,7 +17,7 @@ echo "=== rhwp-safari 빌드 시작 ==="
 
 # 1. Chrome 확장 빌드 (뷰어 + 리소스)
 echo "[1/5] Chrome 확장 빌드..."
-cd "$ROOT/rhwp-chrome" && npm run build
+cd "$ROOT/rhwp-chrome" && pnpm run build
 
 # 2. Chrome dist를 Safari dist로 복사
 echo "[2/5] Safari dist 생성..."

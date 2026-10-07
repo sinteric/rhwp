@@ -14,7 +14,7 @@
  *
  * 실행:
  *   cd rhwp-studio
- *   npx vite --host 0.0.0.0 --port 7700 &
+ *   pnpm exec vite --host 0.0.0.0 --port 7700 &
  *   # Windows: CHROME_PATH 지정 후 headless
  *   CHROME_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe" \
  *     node e2e/issue-1280-textbox-text-input.test.mjs --mode=headless

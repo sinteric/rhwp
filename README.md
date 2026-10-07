@@ -140,7 +140,7 @@ rhwp는 Rust + WebAssembly 기반의 오픈소스 HWP/HWPX 뷰어/에디터입�
 웹 페이지에 HWP 에디터를 통째로 임베드합니다. 메뉴, 툴바, 서식, 표 편집 — 모든 기능을 그대로 사용할 수 있습니다.
 
 ```bash
-npm install @rhwp/editor
+pnpm add @rhwp/editor
 ```
 
 ```html
@@ -156,7 +156,7 @@ npm install @rhwp/editor
 WASM 기반 파서/렌더러를 직접 사용하여 HWP 파일을 SVG로 렌더링합니다.
 
 ```bash
-npm install @rhwp/core
+pnpm add @rhwp/core
 ```
 
 ```javascript
@@ -177,8 +177,8 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 
 | 패키지 | 용도 | 설치 |
 |--------|------|------|
-| [@rhwp/editor](https://www.npmjs.com/package/@rhwp/editor) | 완전한 에디터 UI (iframe) | `npm i @rhwp/editor` |
-| [@rhwp/core](https://www.npmjs.com/package/@rhwp/core) | WASM 파서/렌더러 (API) | `npm i @rhwp/core` |
+| [@rhwp/editor](https://www.npmjs.com/package/@rhwp/editor) | 완전한 에디터 UI (iframe) | `pnpm add @rhwp/editor` |
+| [@rhwp/core](https://www.npmjs.com/package/@rhwp/core) | WASM 파서/렌더러 (API) | `pnpm add @rhwp/core` |
 
 ## 설치 — 빌드 없이 CLI·MCP 쓰기
 
@@ -227,8 +227,8 @@ docker compose --env-file .env.docker run --rm wasm
 
 ```bash
 cd rhwp-studio
-npm install
-npx vite --host 0.0.0.0 --port 7700
+pnpm install --frozen-lockfile
+pnpm exec vite --host 0.0.0.0 --port 7700
 ```
 
 Open `http://localhost:7700` in your browser.
@@ -520,3 +520,13 @@ This project is an independent open-source project with no affiliation, sponsors
 ## License
 
 [MIT License](LICENSE) — Copyright (c) 2025-2026 Edward Kim
+
+## Node 개발 도구
+
+Node.js `24.21.0`과 pnpm `10.34.6`은 루트 `.mise.toml`로 고정한다.
+루트에서 `mise trust`, `mise install`, `mise run install`을 실행한다.
+기존 독립 패키지 구조를 유지하며 각 프론트엔드와 metrics 도구의
+`pnpm-lock.yaml`을 frozen 모드로 설치한다. 직접 pnpm 명령을 실행할 때는
+mise를 셸에서 활성화하거나 `mise exec -- pnpm …`을 사용한다.
+`mise run studio-dev`는 Studio 개발 서버를 시작한다.
+npm registry 발행도 `pnpm publish`를 사용한다. 태그 checkout과 생성된 패키지를 발행하는 CI는 기존 npm 경로처럼 별도 Git 상태 검사 없이 실행한다.

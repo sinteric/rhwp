@@ -17,10 +17,10 @@ scenarios/*.json  ── runner_ocx.py   (설치된 한글, 프로세스 격리)
 모든 OS에서 아래 명령을 실행할 수 있다.
 
 ```bash
-npm --prefix npm/hwpctrl-ocx run gate
+pnpm --dir npm/hwpctrl-ocx run gate
 ```
 
-`npm run gate`는 신규 패키지 엔트리(`npm/hwpctrl-ocx/src/index.mjs`)를 대상으로 한다. Windows에서는
+`pnpm run gate`는 신규 패키지 엔트리(`npm/hwpctrl-ocx/src/index.mjs`)를 대상으로 한다. Windows에서는
 한글 2022 COM Oracle을 새로 실행해 전체 대조한다. macOS·Linux에서는 COM을 실행하지 않고 같은
 등록 시나리오의 호출 순서·API 오류·`SaveAs` 산출물을 WASM 구현에서 검사한다. 이 결과는 **WASM
 자체 회귀 검증**이며 새 Hancom Oracle 통과 근거는 아니다.
@@ -55,7 +55,7 @@ node tools/hwpctrl_compat/python_runner.mjs run_gate.py \
   영향을 받는다. ACP 65001에서는 한컴 COM이 한글을 U+FFFD로 돌려주거나 삽입 위치를 CP949
   byte 수로 옮기는 것이 확인됐다. 따라서 본문 완전일치와 편집 시나리오는 공식
   `UNICODE` 형식을 사용하고, `TEXT`의 CP949 수치 참조 규칙은 Rust·npm 계약 테스트로 고정한다.
-- macOS·Linux에서는 `npm run gate`가 WASM 자체 시나리오 검증을 수행한다. 한글 2022 fixture를
+- macOS·Linux에서는 `pnpm run gate`가 WASM 자체 시나리오 검증을 수행한다. 한글 2022 fixture를
   명시한 읽기 전용 대조는 가능하지만, live COM Oracle 수집·fixture 갱신은 Windows에서만 한다.
 
 `run_gate.py`의 `--cleanup-spawned`는 전용 Windows 계정에서 시간 초과 뒤 생긴 PID를 정리할 때만
@@ -177,7 +177,7 @@ python tools/hwpctrl_compat/run_3way.py --url https://hwp.example.go.kr/webhwpct
 **Windows 에서 3자를 한 번에 닫는 순서** — COM 정답지를 만드는 그 기계에서:
 
 ```bash
-npm --prefix npm/hwpctrl-ocx run gate        # ① live COM 정답지(ocx/) + rhwp 산출물
+pnpm --dir npm/hwpctrl-ocx run gate        # ① live COM 정답지(ocx/) + rhwp 산출물
 python tools/hwpctrl_compat/run_3way.py      # ② 기안기 측정(webhwp/) + 3자 판정(verdict3/)
 ```
 

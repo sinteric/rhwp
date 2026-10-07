@@ -8,7 +8,7 @@
  *
  * 사전 조건:
  *   1. WASM 빌드 완료 (pkg/)
- *   2. Vite dev server 실행 중 (npx vite --host 0.0.0.0 --port 7700)
+ *   2. Vite dev server 실행 중 (pnpm exec vite --host 0.0.0.0 --port 7700)
  *   3. Chrome CDP 연결 가능 (--remote-debugging-port=9222)
  *
  * 실행: node e2e/edit-pipeline.test.mjs [--mode=host|headless]

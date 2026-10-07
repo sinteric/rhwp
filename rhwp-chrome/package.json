@@ -8,13 +8,18 @@
   "scripts": {
     "dev": "vite",
     "build": "node build.mjs",
-    "test:e2e:smoke": "npm run build && node --test e2e/page-budget.test.mjs && node e2e/extension-smoke.test.mjs",
-    "test:e2e:download": "npm run build && node e2e/download-interceptor.test.mjs",
+    "test:e2e:smoke": "pnpm run build && node --test e2e/page-budget.test.mjs && node e2e/extension-smoke.test.mjs",
+    "test:e2e:download": "pnpm run build && node e2e/download-interceptor.test.mjs",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "puppeteer": "^25.9.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
+  },
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "pnpm": ">=10.34.6 <11",
+    "node": ">=24.0.0"
   }
 }

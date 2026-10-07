@@ -644,7 +644,7 @@ function fontReferences(files) {
       && file !== 'README.md'
       && file !== 'THIRD_PARTY_LICENSES.md') return false;
     if (/\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|otf|wasm|pdf)$/i.test(file)) return false;
-    if (file.endsWith('package-lock.json')) return false;
+    if (file.endsWith('pnpm-lock.yaml')) return false;
     return true;
   });
 
@@ -903,8 +903,8 @@ async function main() {
       arch: process.arch,
       osRelease: os.release(),
       scriptSha256: sha256(readFileSync(SCRIPT_FILE)),
-      metricsPackageLockSha256: sha256(readFileSync(path.join(METRICS_DIR, 'package-lock.json'))),
-      studioPackageLockSha256: sha256(readFileSync(path.join(STUDIO_DIR, 'package-lock.json'))),
+      metricsPackageLockSha256: sha256(readFileSync(path.join(METRICS_DIR, 'pnpm-lock.yaml'))),
+      studioPackageLockSha256: sha256(readFileSync(path.join(STUDIO_DIR, 'pnpm-lock.yaml'))),
     },
     thresholds: {
       maxFileLines: 1200,

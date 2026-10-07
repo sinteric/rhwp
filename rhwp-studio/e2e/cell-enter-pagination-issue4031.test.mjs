@@ -9,7 +9,7 @@
  *  3. barrier 대조군: pending 중 ArrowDown은 기존 full flush 1회를 유지한다.
  *
  * 실행 (repo root에서 wasm-pack build 후):
- *   cd rhwp-studio && npm run e2e:issue-4031-cell-enter
+ *   cd rhwp-studio && pnpm run e2e:issue-4031-cell-enter
  */
 
 import assert from 'node:assert/strict';

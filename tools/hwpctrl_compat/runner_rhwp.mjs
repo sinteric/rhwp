@@ -77,7 +77,7 @@ function buildLegacyImpl() {
   // `.bin/tsc.cmd` 는 쓰지 않는다 — Node 20+ 는 shell 없이 `.cmd` 실행을 막는다.
   const tsc = join(REPO, 'rhwp-studio', 'node_modules', 'typescript', 'bin', 'tsc');
   if (!existsSync(tsc)) {
-    throw new Error(`tsc 없음: ${tsc} — rhwp-studio 에서 npm install 을 먼저 하라`);
+    throw new Error(`tsc 없음: ${tsc} — rhwp-studio 에서 pnpm add 을 먼저 하라`);
   }
   const entry = join(outDir, 'index.js');
   try {

@@ -6,7 +6,7 @@
  *
  * 실행 (repo root에서 fresh WASM build 후):
  *   wasm-pack build --target web --out-dir pkg
- *   cd rhwp-studio && npm run e2e:issue-3820
+ *   cd rhwp-studio && pnpm run e2e:issue-3820
  */
 
 import path from 'node:path';

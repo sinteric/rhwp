@@ -48,9 +48,13 @@ VSCode에서 HWP/HWPX 문서를 바로 열어볼 수 있는 확장 프로그램�
 
 ```bash
 cd rhwp-vscode
-npm install
-npm run compile
+pnpm install --frozen-lockfile
+pnpm run compile
 ```
+
+루트에서 mise 도구를 준비한다. VSIX는 `pnpm run package`로 만든다.
+확장의 런타임 의존성은 webpack 번들에 포함되므로 패키징·발행 시
+`--no-dependencies`로 npm/Yarn 의존성 탐색을 끈다.
 
 ## Third-Party Licenses
 

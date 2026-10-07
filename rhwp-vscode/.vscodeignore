@@ -1,5 +1,7 @@
 src/**
 node_modules/**
+pnpm-lock.yaml
+pnpm-workspace.yaml
 .vscode/**
 media/icon.svg
 tsconfig.json

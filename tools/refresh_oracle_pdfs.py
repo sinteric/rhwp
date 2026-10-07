@@ -130,15 +130,20 @@ def existing_canonical_pdfs(source):
 
 
 def mcp_command(args, env_file, action, extra):
+    # The standalone pnpm runtime consumes --env-file before launching dlx.
+    # Pass client arguments as JSON so only the MCP client reads its env file.
+    runner = (
+        'import json, shutil, subprocess, sys; '
+        'command = shutil.which("hwp2024-mcp-convert") or "hwp2024-mcp-convert"; '
+        'sys.exit(subprocess.call([command, *json.loads(sys.argv[1])]))'
+    )
     return [
-        args.npx,
-        '-y',
+        args.pnpm,
         '--package=file:%s' % args.package,
-        '--',
-        'hwp2024-mcp-convert',
-        action,
-        '--env-file', env_file,
-        *extra,
+        'dlx',
+        sys.executable,
+        '-c', runner,
+        json.dumps([action, '--env-file', env_file, *extra]),
     ]
 
 
@@ -371,7 +376,7 @@ def migrate_success_log(args, log_path, logger):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--rhwp', default='target/release/rhwp')
-    parser.add_argument('--npx', default=shutil.which('npx') or 'npx')
+    parser.add_argument('--pnpm', default=shutil.which('pnpm') or ('pnpm.cmd' if sys.platform == 'win32' else 'pnpm'))
     parser.add_argument(
         '--package',
         default=str(TOOLS_DIR.parent / 'tools/hwp-convert-mcp-2024-client-20260824-011002.tar.gz'),

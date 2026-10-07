@@ -299,7 +299,7 @@ remote push, PR 생성, ready 전환, merge 승인과는 별개다.
 | mydocs만 변경 | git diff --check, 문서 경로·링크·변경 범위 확인. Cargo 생략 |
 | Rust parser/model/CLI | 모든 Rust lint 묶음, focused test, release-test 전체. 단, 4.3.0의 검토 재사용 조건이면 focused test와 GitHub 전체 CI 근거 |
 | renderer/layout/typeset/WASM | focused test, release-test 전체, Native Skia 3종, wasm-pack build, 시각 증적. 단, 4.3.0의 검토 재사용 조건이면 focused test, WASM·시각 증적과 GitHub 전체 CI 근거 |
-| rhwp-studio만 변경 | TypeScript 검사, npm test, 실제 browser 동작 |
+| rhwp-studio만 변경 | TypeScript 검사, pnpm test, 실제 browser 동작 |
 | npm/editor public API·transport·type | 아래 package 검증 |
 | CI workflow | [GitHub 저장소 운영 매뉴얼](../github_operations.md)의 변경 등급에 따른 workflow 구문·정책 테스트·required check 영향·최신 GitHub Actions 결과 |
 | Rust test/baseline helper | 모든 Rust lint 묶음, 관련 focused test, snapshot 결정성, 최신 PR head CI |
@@ -455,10 +455,10 @@ diff -u tests/fixtures/overflow_cell_baseline.tsv /tmp/overflow_cell_current.tsv
 npm/editor의 public API, transport, index.d.ts, README 또는 package manifest 변경은 Studio test만으로 끝내지 않는다.
 
 ~~~bash
-npm --prefix npm/editor test
+pnpm --dir npm/editor test
 node --test scripts/frontend-wasm-bindings.test.mjs scripts/frontend-editor-embed.test.mjs
-(cd rhwp-studio && npx tsc --ignoreConfig --noEmit --skipLibCheck ../npm/editor/index.d.ts)
-(cd npm/editor && npm pack --dry-run --json)
+(cd rhwp-studio && pnpm exec tsc --ignoreConfig --noEmit --skipLibCheck ../npm/editor/index.d.ts)
+(cd npm/editor && pnpm pack --dry-run --json)
 ~~~
 
 iframe RPC 완료 시점이나 기본 옵션이 바뀌면 fresh WASM build와 실행 중인 Vite 또는 새 Vite를 사용해
@@ -467,11 +467,11 @@ embed E2E를 추가한다. 기본값 변경은 옵션을 생략한 smoke에서�
 ~~~bash
 # 최초 한 번의 .env.docker 준비는 개발 환경 안내를 따른다.
 docker compose --env-file .env.docker run --rm wasm
-VITE_URL=http://127.0.0.1:7700 npm --prefix rhwp-studio run e2e:embed
+VITE_URL=http://127.0.0.1:7700 pnpm --dir rhwp-studio run e2e:embed
 ~~~
 
 대형 복합 변경 또는 승인된 전체 검증은 build, release lib, release-test, Native Skia 3종, fmt,
-diff check, clippy, doc test, TypeScript, npm test, 표준 Docker WASM build를 이 순서로 실행한다.
+diff check, clippy, doc test, TypeScript, pnpm test, 표준 Docker WASM build를 이 순서로 실행한다.
 
 ~~~bash
 cargo build --locked --release --target-dir target/pr-review
@@ -489,8 +489,8 @@ cargo fmt --all -- --check
 git diff --check
 cargo clippy --locked --all-targets --target-dir target/pr-review -- -D warnings
 cargo test --locked --doc --target-dir target/pr-review
-(cd rhwp-studio && npx tsc --noEmit)
-npm --prefix rhwp-studio test
+(cd rhwp-studio && pnpm exec tsc --noEmit)
+pnpm --dir rhwp-studio test
 docker compose --env-file .env.docker run --rm wasm
 ~~~
 

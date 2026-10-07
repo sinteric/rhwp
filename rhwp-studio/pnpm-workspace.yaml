@@ -1,0 +1,7 @@
+packages: []
+
+allowBuilds:
+  fsevents@2.3.3: true
+
+overrides:
+  serialize-javascript: "7.0.5"

@@ -1309,22 +1309,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: rhwp-studio/package-lock.json
+          version: '2026.9.14'
 
       - name: Install Studio dependencies
-        run: npm --prefix rhwp-studio ci
+        run: pnpm --dir rhwp-studio install --frozen-lockfile
 
       - name: Type-check Studio
         working-directory: rhwp-studio
-        run: npx tsc --project tsconfig.ci-unit.json --noEmit
+        run: pnpm exec tsc --project tsconfig.ci-unit.json --noEmit
 
       - name: Run Studio unit tests
-        run: npm --prefix rhwp-studio run test
+        run: pnpm --dir rhwp-studio run test
 
   frontend-package-gates:
     name: Frontend package gates
@@ -1366,29 +1364,23 @@ jobs:
       - name: Build fresh WASM package for frontend gates
         run: wasm-pack build --target web --dev
 
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: |
-            rhwp-studio/package-lock.json
-            rhwp-chrome/package-lock.json
-            rhwp-firefox/package-lock.json
-            rhwp-vscode/package-lock.json
+          version: '2026.9.14'
 
       - name: Install frontend package dependencies
         run: |
-          npm --prefix rhwp-studio ci
-          npm --prefix rhwp-chrome ci
-          npm --prefix rhwp-firefox ci
-          npm --prefix rhwp-vscode ci
+          pnpm --dir rhwp-studio install --frozen-lockfile
+          pnpm --dir rhwp-chrome install --frozen-lockfile
+          pnpm --dir rhwp-firefox install --frozen-lockfile
+          pnpm --dir rhwp-vscode install --frozen-lockfile
 
       - name: Verify WASM bindings and editor embed contract
         run: node --test scripts/frontend-wasm-bindings.test.mjs scripts/frontend-editor-embed.test.mjs
 
       - name: Run editor package tests when declared
-        run: npm --prefix npm/editor test --if-present
+        run: pnpm --dir npm/editor run --if-present test
 
       - name: Run shared and extension service worker tests
         run: node --test rhwp-shared/sw/*.test.js rhwp-chrome/sw/*.test.mjs rhwp-firefox/sw/*.test.mjs
@@ -1397,7 +1389,7 @@ jobs:
         run: node --test rhwp-chrome/options.test.mjs
 
       - name: Run Studio unit tests
-        run: npm --prefix rhwp-studio run test
+        run: pnpm --dir rhwp-studio run test
 
       - name: Install headless Chrome
         working-directory: rhwp-studio
@@ -1426,28 +1418,28 @@ jobs:
         working-directory: rhwp-studio
         env:
           VITE_PORT: '7700'
-        run: npm run e2e:undo-depth
+        run: pnpm run e2e:undo-depth
 
       - name: Run Studio responsive toolbar gate (#6118, #6138)
-        # CI wiring: rhwp-studio/e2e/responsive.test.mjs via npm e2e:responsive.
+        # CI wiring: rhwp-studio/e2e/responsive.test.mjs via pnpm e2e:responsive.
         working-directory: rhwp-studio
         env:
           VITE_PORT: '7720'
-        run: npm run e2e:responsive
+        run: pnpm run e2e:responsive
 
       - name: Build Studio
-        run: npm --prefix rhwp-studio run build
+        run: pnpm --dir rhwp-studio run build
 
       - name: Build browser extensions
         run: |
-          npm --prefix rhwp-chrome run build
-          npm --prefix rhwp-firefox run build
+          pnpm --dir rhwp-chrome run build
+          pnpm --dir rhwp-firefox run build
 
       - name: Verify extension distributions
         run: node --test scripts/frontend-extension-dist.test.mjs
 
       - name: Compile VS Code extension
-        run: npm --prefix rhwp-vscode run compile
+        run: pnpm --dir rhwp-vscode run compile
 
       - name: Verify VS Code webview outline keyboard contract
         run: node --test scripts/frontend-vscode-outline.test.mjs

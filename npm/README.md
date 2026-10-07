@@ -34,9 +34,9 @@ HWP/HWPX 파일을 파싱하고 SVG로 렌더링하는 저수준 API를 제공�
 ```bash
 mkdir my-hwp-viewer
 cd my-hwp-viewer
-npm init -y
-npm install @rhwp/core
-npm install vite --save-dev
+pnpm init
+pnpm add @rhwp/core
+pnpm add -D vite
 ```
 
 ### 2. WASM 파일 복사
@@ -104,7 +104,7 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
 ### 5. 실행
 
 ```bash
-npx vite --port 3000
+pnpm exec vite --port 3000
 ```
 
 브라우저에서 `http://localhost:3000` 을 열고 HWP 파일을 선택하면 렌더링됩니다.

@@ -3,10 +3,10 @@
  * default PageLayerTree replay path.
  *
  * Run from rhwp-studio after building ../pkg with wasm-pack:
- *   npm run e2e:render-diff
+ *   pnpm run e2e:render-diff
  *
  * To start/stop the Vite server automatically:
- *   npm run e2e:render-diff:ci
+ *   pnpm run e2e:render-diff:ci
  *
  * Useful knobs:
  *   RHWP_RENDER_DIFF_FILES=basic/KTX.hwp,biz_plan.hwp

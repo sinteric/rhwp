@@ -146,7 +146,7 @@ Per-cycle changes (including contributor credits) are recorded in [CHANGELOG_EN.
 Embed the complete HWP editor in your web page — menus, toolbars, formatting, table editing, everything included.
 
 ```bash
-npm install @rhwp/editor
+pnpm add @rhwp/editor
 ```
 
 ```html
@@ -162,7 +162,7 @@ npm install @rhwp/editor
 Use the WASM-based parser/renderer directly to render HWP files as SVG.
 
 ```bash
-npm install @rhwp/core
+pnpm add @rhwp/core
 ```
 
 ```javascript
@@ -183,8 +183,8 @@ document.getElementById('viewer').innerHTML = doc.renderPageSvg(0);
 
 | Package | Purpose | Install |
 |---------|---------|---------|
-| [@rhwp/editor](https://www.npmjs.com/package/@rhwp/editor) | Full editor UI (iframe embed) | `npm i @rhwp/editor` |
-| [@rhwp/core](https://www.npmjs.com/package/@rhwp/core) | WASM parser/renderer (API) | `npm i @rhwp/core` |
+| [@rhwp/editor](https://www.npmjs.com/package/@rhwp/editor) | Full editor UI (iframe embed) | `pnpm add @rhwp/editor` |
+| [@rhwp/core](https://www.npmjs.com/package/@rhwp/core) | WASM parser/renderer (API) | `pnpm add @rhwp/core` |
 
 ## Install — CLI & MCP without building
 
@@ -249,8 +249,8 @@ Build output goes to `pkg/`.
 
 ```bash
 cd rhwp-studio
-npm install
-npx vite --host 0.0.0.0 --port 7700
+pnpm install --frozen-lockfile
+pnpm exec vite --host 0.0.0.0 --port 7700
 ```
 
 Open `http://localhost:7700` in your browser.
@@ -514,3 +514,11 @@ This project is an independent open-source project with no affiliation, sponsors
 ## License
 
 [MIT License](LICENSE) — Copyright (c) 2025-2026 Edward Kim
+
+## Node development tools
+
+The root `.mise.toml` pins Node.js `24.21.0` and pnpm `10.34.6`.
+Run `mise trust`, `mise install`, and `mise run install` from the repository root.
+Each frontend and the metrics tool keeps its own `pnpm-lock.yaml`.
+Activate mise in your shell or use `mise exec -- pnpm …` for direct commands.
+Run `mise run studio-dev` to start the Studio development server.

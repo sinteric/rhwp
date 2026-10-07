@@ -17,7 +17,7 @@ const DIST = resolve(__dirname, 'dist');
  * Shell 우회로 명령어 실행 — 인자가 shell 에 의해 해석되지 않아 경로의 공백/특수문자 안전.
  * (CodeQL js/shell-command-injection-from-environment fix, alert #16)
  *
- * Windows 의 npx 같은 .cmd 스크립트 실행을 위해 shell: true 가 필요한 경우는
+ * Windows 의 pnpm 같은 .cmd 스크립트 실행을 위해 shell: true 가 필요한 경우는
  * 별도 처리. 본 스크립트는 Linux/macOS 빌드 전제 (Docker WASM + native).
  */
 function run(file, args, cwd = __dirname) {
@@ -47,7 +47,7 @@ if (existsSync(DIST)) {
 // 1. Vite 빌드 (rhwp-studio → dist/)
 console.log('[1/4] Vite 빌드...');
 const studioDir = resolve(ROOT, 'rhwp-studio');
-run('npx', ['vite', 'build', '--config', resolve(__dirname, 'vite.config.ts')], studioDir);
+run('pnpm', ['exec', 'vite', 'build', '--config', resolve(__dirname, 'vite.config.ts')], studioDir);
 
 // index.html → viewer.html 이름 변경
 const indexHtml = resolve(DIST, 'index.html');

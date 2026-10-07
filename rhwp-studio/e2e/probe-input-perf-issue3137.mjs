@@ -16,20 +16,20 @@
  *
  *   wasm-pack build --target web --out-dir pkg
  *   cd rhwp-studio
- *   npm run e2e:issue-3137-perf
+ *   pnpm run e2e:issue-3137-perf
  *
  * Focused smoke:
  *
- *   npm run e2e:issue-3137-perf -- \
+ *   pnpm run e2e:issue-3137-perf \
  *     --formats=hwp --kinds=english --cadences=0 --iterations=3 --warmups=1
  *
  * focused geometry 최적화 게이트(Stage 3):
  *
- *   npm run e2e:issue-3137-perf -- --require-focused-geometry
+ *   pnpm run e2e:issue-3137-perf --require-focused-geometry
  *
  * focused page-tree repaint 최적화 게이트(Stage 4):
  *
- *   npm run e2e:issue-3137-perf -- \
+ *   pnpm run e2e:issue-3137-perf \
  *     --require-focused-geometry --require-focused-repaint
  */
 

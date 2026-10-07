@@ -50,17 +50,17 @@ echo "📌 버전: v$VERSION"
 
 # 빌드
 echo "🔨 빌드 중..."
-npm run compile
+pnpm run compile
 
 # VS Code Marketplace 배포
 echo ""
 echo "🚀 VS Code Marketplace 배포 중..."
-npx vsce publish -p "$VSCE_PAT"
+pnpm dlx vsce publish --no-dependencies -p "$VSCE_PAT"
 
 # Open VSX 배포
 echo ""
 echo "🚀 Open VSX 배포 중..."
-npx ovsx publish -p "$OVSX_PAT"
+pnpm dlx ovsx publish --no-dependencies -p "$OVSX_PAT"
 
 echo ""
 echo "✅ v$VERSION 배포 완료!"

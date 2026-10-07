@@ -1,0 +1,5 @@
+packages: []
+
+allowBuilds:
+  fsevents@2.3.3: true
+  puppeteer@25.9.0: true

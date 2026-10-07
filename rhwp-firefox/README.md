@@ -50,8 +50,8 @@
 
 ```bash
 cd rhwp-firefox
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm run build
 ```
 
 빌드 결과물은 `dist/` 폴더에 생성됩니다.

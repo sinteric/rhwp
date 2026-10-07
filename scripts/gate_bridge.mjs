@@ -36,7 +36,7 @@ const args = process.argv.slice(2);
 const has = (flag) => args.includes(flag);
 const only = args.find((a) => a.startsWith('--only='))?.slice('--only='.length) ?? null;
 
-/** e2e 목록 — MANIFEST 의 `npm gate:bridge` 배선 열과 짝이 맞아야 한다. */
+/** e2e 목록 — MANIFEST 의 `pnpm gate:bridge` 배선 열과 짝이 맞아야 한다. */
 const E2E_SUITES = [
   'automation-commands',
   'plugin-lifecycle',
@@ -62,8 +62,8 @@ function run(cmd, cmdArgs, options = {}) {
   });
 }
 
-const npx = (cmdArgs, options) => run('npx', cmdArgs, options);
-const npm = (cmdArgs, options) => run('npm', cmdArgs, options);
+const exec = (cmdArgs, options) => run('pnpm', ['exec', ...cmdArgs], options);
+const pnpm = (cmdArgs, options) => run('pnpm', cmdArgs, options);
 
 function portOpen(port) {
   return new Promise((done) => {
@@ -109,8 +109,8 @@ if (wants('types')) {
     group: 'types',
     name: 'tsc (main, ci-unit)',
     async run() {
-      const main = await npx(['tsc', '--noEmit', '-p', 'tsconfig.json'], { cwd: STUDIO });
-      const ci = await npx(['tsc', '--noEmit', '-p', 'tsconfig.ci-unit.json'], { cwd: STUDIO });
+      const main = await exec(['tsc', '--noEmit', '-p', 'tsconfig.json'], { cwd: STUDIO });
+      const ci = await exec(['tsc', '--noEmit', '-p', 'tsconfig.ci-unit.json'], { cwd: STUDIO });
       const ok = main.code === 0 && ci.code === 0;
       return { ok, detail: ok ? 'OK' : (main.out || ci.out).split('\n').slice(0, 3).join(' / ') };
     },
@@ -122,7 +122,7 @@ if (wants('unit')) {
     group: 'unit',
     name: 'studio 단위',
     async run() {
-      const r = await npm(['test'], { cwd: STUDIO });
+      const r = await pnpm(['test'], { cwd: STUDIO });
       const { pass, fail } = parseNodeTest(r.out);
       return { ok: r.code === 0 && fail === 0, detail: `${pass} pass / ${fail} fail` };
     },
@@ -174,7 +174,7 @@ if (wants('build')) {
     group: 'build',
     name: 'build + 플러그인 청크 분리',
     async run() {
-      const r = await npm(['run', 'build'], { cwd: STUDIO });
+      const r = await pnpm(['run', 'build'], { cwd: STUDIO });
       if (r.code !== 0) return { ok: false, detail: '빌드 실패', out: r.out.slice(-1500) };
       // 플러그인이 엔트리에 섞이면 "안 올려도 로드되지 않는다" 는 계약이 깨진다.
       const chunk = /studio-plugin-[\w-]+\.js\s+([\d.]+\s*kB)/.exec(r.out);
@@ -190,7 +190,7 @@ if (wants('hwpctrl-gate') && !has('--no-hwpctrl-gate')) {
     group: 'hwpctrl-gate',
     name: 'hwpctrl standalone gate',
     async run() {
-      const r = await npm(['--prefix', 'npm/hwpctrl-ocx', 'run', 'gate']);
+      const r = await pnpm(['--dir', 'npm/hwpctrl-ocx', 'run', 'gate']);
       const problems = /실행 문제: (\{.*\})/.exec(r.out)?.[1];
       const okScenarios = (r.out.match(/: OK$/gm) ?? []).length;
       return {
@@ -217,7 +217,7 @@ async function main() {
       // 남의 서버를 내리지 않는다. 다만 낡은 번들일 수 있으므로 알린다.
       console.log(`  [dev] ${DEV_URL} 이미 떠 있음 — 그대로 사용 (러너가 내리지 않는다)\n`);
     } else {
-      dev = spawn('npm', ['run', 'dev'], { cwd: STUDIO, env: process.env, detached: true });
+      dev = spawn('pnpm', ['run', 'dev'], { cwd: STUDIO, env: process.env, detached: true });
       dev.stdout?.on('data', () => {});
       dev.stderr?.on('data', () => {});
       if (!await waitForPort(DEV_PORT)) {

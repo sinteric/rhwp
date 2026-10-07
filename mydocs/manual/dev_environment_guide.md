@@ -14,7 +14,7 @@ last_verified: 2026-08-11
 
 - Rust stable toolchain과 Cargo
 - `wasm-pack`
-- Node.js와 npm
+- [mise](https://mise.jdx.dev/getting-started.html)로 고정한 Node.js와 pnpm
 - Python 3.12(PDF/SVG 기준 비교를 수행할 때)
 - Git
 - 선택 도구: `actionlint`, Poppler(`pdfinfo`, `pdftoppm`), `rsvg-convert`
@@ -26,9 +26,13 @@ rustc --version
 cargo --version
 wasm-pack --version
 node --version
-npm --version
+pnpm --version
 python3.12 --version
 ```
+
+Node.js와 pnpm은 루트 `.mise.toml`을 따른다. 저장소 루트에서 `mise trust`,
+`mise install`, `mise run install`을 실행한다. pnpm을 직접 실행하려면 mise를
+셸에서 활성화하거나 `mise exec -- pnpm …`을 사용한다.
 
 ## Python 로컬 가상환경
 
@@ -223,8 +227,8 @@ Windows 전용이다. 소비자 연결 방법, 지원 범위, fixture 대조와 
 
 ```bash
 cd rhwp-studio
-npm ci
-npx vite --host 0.0.0.0 --port 7700
+pnpm install --frozen-lockfile
+pnpm exec vite --host 0.0.0.0 --port 7700
 ```
 
 해당 포트가 이미 사용 중이면 기존 서버를 확인하거나 다른 포트를 지정한다. 브라우저 검증 절차는
@@ -239,8 +243,8 @@ studio 는 `dist/` 하나로 배포된다(`.github/workflows/deploy-pages.yml` �
 
 ```bash
 cd rhwp-studio
-npm run build:no-hwpctrl      # RHWP_WITHOUT_HWPCTRL=1
-npm run dev:no-hwpctrl        # 개발 서버도 같은 구성으로
+pnpm run build:no-hwpctrl      # RHWP_WITHOUT_HWPCTRL=1
+pnpm run dev:no-hwpctrl        # 개발 서버도 같은 구성으로
 ```
 
 이 플래그는 `main.ts` 의 동적 import 를 상수 분기(`__RHWP_HWPCTRL__`) 안에 두어 **빌드 시점에
@@ -259,7 +263,7 @@ Rust 를 고쳐도 WASM 재빌드 없이 실행 중인 브라우저에 반영하
 **feature 를 켜는 것과 디버그 프로파일로 빌드하는 것은 별개의 두 조건이고, 둘 다 필요하다.**
 `subsecond::HotFn::try_call`(`subsecond-0.7.10/src/lib.rs:411-414`)이 `if !cfg!(debug_assertions)`
 로 점프 테이블을 아예 보지 않고 원본 함수를 부른다. 그래서 릴리스 프로파일로 빌드하면 경계를
-아무리 잘 배치해도 모든 호출이 패치 이전 코드로 간다. `npm run subsecond:serve` 가 쓰는
+아무리 잘 배치해도 모든 호출이 패치 이전 코드로 간다. `pnpm run subsecond:serve` 가 쓰는
 `dx serve --web` 은 디버그가 기본이라 지금은 맞게 동작하지만 **그 의존은 우연이다** — `--release`
 를 얹은 dx 나 직접 만든 릴리스 wasm 에서는 모든 층이 성공을 보고하는데 화면만 안 바뀐다. (#4596)
 
@@ -277,8 +281,8 @@ cd ~/rhwp
 rustup target add wasm32-unknown-unknown
 
 cd rhwp-studio
-npm ci
-npm run subsecond:install
+pnpm install --frozen-lockfile
+pnpm run subsecond:install
 ```
 
 `subsecond:install`은 루트 `Cargo.toml` 의 `subsecond` 정확 핀에서 버전을 유도해(#4580,
@@ -319,12 +323,12 @@ wasm32 검사에는 **`--lib` 이 필수다.** 빼면 CLI 바이너리(`src/main
 ```bash
 # 터미널 1: Dioxus hot-patch endpoint는 로컬 loopback으로만 연다.
 cd rhwp-studio
-npm run subsecond:install   # Cargo.toml 이 핀한 버전의 dioxus-cli 를 target/dioxus-cli 에 설치
-npm run subsecond:serve     # dx serve --hot-patch (127.0.0.1:7711)
+pnpm run subsecond:install   # Cargo.toml 이 핀한 버전의 dioxus-cli 를 target/dioxus-cli 에 설치
+pnpm run subsecond:serve     # dx serve --hot-patch (127.0.0.1:7711)
 
 # 터미널 2: Studio 화면은 Vite가 제공하고, Dioxus endpoint를 프록시한다.
 cd rhwp-studio
-npm run dev:subsecond -- --host 0.0.0.0 --port 7700
+pnpm run dev:subsecond --host 0.0.0.0 --port 7700
 ```
 
 최초 기동 뒤에는 터미널 1에서 `/`를 눌러 단축키 메뉴가 나타나는지 먼저 확인한다. 이 확인은
@@ -371,7 +375,7 @@ curl -fsS -o /dev/null -w 'vite-wasm=%{http_code}\n' http://127.0.0.1:7700/wasm/
    뜻은 아니다. 실제 실패는 브라우저 콘솔의 panic 또는 `error`/`unhandledrejection`으로 판별한다.
 
 세션 종료는 터미널 2의 Vite를 먼저 `Ctrl+C`로 끝내고, 이어 터미널 1의 `dx serve`를 `Ctrl+C`로 끝낸다.
-다음 세션에서 같은 `npm run subsecond:serve`와 `npm run dev:subsecond -- --host 0.0.0.0 --port 7700`을
+다음 세션에서 같은 `pnpm run subsecond:serve`와 `pnpm run dev:subsecond --host 0.0.0.0 --port 7700`을
 다시 실행한다.
 
 ### 지원 플랫폼 — Linux·macOS·WSL에서만 동작한다
@@ -413,7 +417,7 @@ fetch/compile/instantiate future 를 띄우고 **즉시** `Ok(())` 를 돌려주
 
 ### subsecond 핫패치 세션은 길이를 관리한다
 
-`npm run dev:subsecond`(dx devserver + Vite)는 Rust 변경을 새로고침 없이 적용한다. 대신 **적용한
+`pnpm run dev:subsecond`(dx devserver + Vite)는 Rust 변경을 새로고침 없이 적용한다. 대신 **적용한
 패치는 세션이 끝날 때까지 회수되지 않는다.** subsecond 는 이전 점프 테이블을 그대로 버리고, wasm 의
 선형 메모리와 간접 함수 테이블은 `memory.grow`/`funcs.grow` 로 늘기만 할 뿐 줄어들 수 없다. 패치 한
 건이 더하는 선형 메모리는 `(ceil(패치 byte / 64KiB) + 1) × 64KiB` 이고, 이 저장소의 디버그 베이스

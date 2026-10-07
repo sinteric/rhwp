@@ -4,7 +4,7 @@
  *
  * 사용법:
  *   cd rhwp-studio
- *   npx vite --host 0.0.0.0 --port 7700 &
+ *   pnpm exec vite --host 0.0.0.0 --port 7700 &
  *   node e2e/gen-screenshot.mjs [--mode=host]
  *
  * 출력: assets/screenshots/render-example-1.png

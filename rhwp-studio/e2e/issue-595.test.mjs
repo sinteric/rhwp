@@ -9,7 +9,7 @@
  *
  * 실행:
  *   cd rhwp-studio
- *   npx vite --host 0.0.0.0 --port 7700 &
+ *   pnpm exec vite --host 0.0.0.0 --port 7700 &
  *   node e2e/issue-595.test.mjs --mode=headless
  *
  * 또는:

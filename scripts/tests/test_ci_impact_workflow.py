@@ -662,13 +662,13 @@ class CiImpactWorkflowTests(unittest.TestCase):
         unit = self._job("frontend-unit-gates")
         package = self._job("frontend-package-gates")
         self.assertIn("needs.preflight.outputs.frontend_mode == 'unit'", unit)
-        self.assertIn("npx tsc --project tsconfig.ci-unit.json --noEmit", unit)
-        self.assertIn("npm --prefix rhwp-studio run test", unit)
+        self.assertIn("pnpm exec tsc --project tsconfig.ci-unit.json --noEmit", unit)
+        self.assertIn("pnpm --dir rhwp-studio run test", unit)
         self.assertNotIn("wasm-pack build", unit)
         self.assertIn("needs.preflight.outputs.frontend_mode == 'package'", package)
         self.assertIn("wasm-pack build --target web --dev", package)
-        self.assertIn("npm --prefix rhwp-studio run test", package)
-        self.assertIn("npm --prefix rhwp-studio run build", package)
+        self.assertIn("pnpm --dir rhwp-studio run test", package)
+        self.assertIn("pnpm --dir rhwp-studio run build", package)
 
     def test_rust_lint_and_archive_builder_require_rust_axis(self) -> None:
         lint = self._job("lint")

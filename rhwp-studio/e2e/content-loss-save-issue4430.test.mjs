@@ -8,7 +8,7 @@
  * This covers the explicit HWP/HWPX serializer-save slice only; auxiliary
  * byte-only consumers and unrelated warning surfaces remain out of scope.
  *
- * Run: npm run e2e:issue-4430-content-loss
+ * Run: pnpm run e2e:issue-4430-content-loss
  */
 import {
   assert,

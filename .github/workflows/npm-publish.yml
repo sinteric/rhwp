@@ -68,21 +68,20 @@ jobs:
       - name: Prepare npm package
         run: bash scripts/prepare-npm.sh
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: 24
-          package-manager-cache: false
+          version: '2026.9.14'
 
       - name: Publish to npm
         working-directory: pkg
         run: |
           package_name=$(node -p "require('./package.json').name")
           package_version=$(node -p "require('./package.json').version")
-          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+          if pnpm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
             echo "${package_name}@${package_version} already exists; skipping publish"
           else
-            npm publish --access public
+            pnpm publish --access public --no-git-checks
           fi
 
   publish-npm-editor:
@@ -94,21 +93,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: 24
-          package-manager-cache: false
+          version: '2026.9.14'
 
       - name: Publish to npm
         working-directory: npm/editor
         run: |
           package_name=$(node -p "require('./package.json').name")
           package_version=$(node -p "require('./package.json').version")
-          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+          if pnpm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
             echo "${package_name}@${package_version} already exists; skipping publish"
           else
-            npm publish --access public
+            pnpm publish --access public --no-git-checks
           fi
 
   publish-vscode:
@@ -126,14 +124,14 @@ jobs:
           name: wasm-pkg
           path: pkg/
 
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - name: Set up mise toolchain
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: 20
+          version: '2026.9.14'
 
       - name: Install dependencies
         working-directory: rhwp-vscode
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Copy logo
         run: cp assets/logo/logo-128.png rhwp-vscode/media/icon.png
@@ -145,12 +143,12 @@ jobs:
 
       - name: Build extension
         working-directory: rhwp-vscode
-        run: npm run compile
+        run: pnpm run compile
 
       - name: Publish to VS Code Marketplace
         working-directory: rhwp-vscode
-        run: npx vsce publish -p ${{ secrets.VSCE_PAT }}
+        run: pnpm dlx vsce publish --no-dependencies -p ${{ secrets.VSCE_PAT }}
 
       - name: Publish to Open VSX
         working-directory: rhwp-vscode
-        run: npx ovsx publish -p ${{ secrets.OVSX_PAT }}
+        run: pnpm dlx ovsx publish --no-dependencies -p ${{ secrets.OVSX_PAT }}

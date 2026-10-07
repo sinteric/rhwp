@@ -27,7 +27,7 @@ COM Oracle과 0 diff 로 대조됐고, 넷(음·양력)은 **오라클이 판정
 소스 트리에서 시험할 때는 앱의 `package.json`이 있는 디렉터리에서 로컬 패키지를 연결한다.
 
 ```bash
-npm install /path/to/rhwp/npm/hwpctrl-ocx
+pnpm install --frozen-lockfile /path/to/rhwp/npm/hwpctrl-ocx
 ```
 
 `@rhwp/core`의 WASM 초기화가 완료된 뒤 생성자를 호출한다. WASM 파일 배치 경로는 앱의 번들러와
@@ -126,13 +126,13 @@ Oracle 하니스의 Windows 전용 준비와 실행 규칙은
 
 ```bash
 # 공개 패키지 진입점과 TEXT/UNICODE dispatch 계약을 빠르게 검사한다.
-npm --prefix npm/hwpctrl-ocx run test:contract
+pnpm --dir npm/hwpctrl-ocx run test:contract
 
 # 좌표 변환·모드 동등성·독립성 검사 (pkg/ WASM 이 있어야 한다)
 cd npm/hwpctrl-ocx && node --test test/*.test.mjs
 
 # Windows에서는 Hancom 2022 COM Oracle, macOS/Linux에서는 WASM 자체 시나리오를 검사한다.
-npm --prefix npm/hwpctrl-ocx run gate
+pnpm --dir npm/hwpctrl-ocx run gate
 ```
 
 `gate`는 새 패키지 구현(`npm/hwpctrl-ocx/src/index.mjs`)을 대상으로 실행한다. 기존 studio

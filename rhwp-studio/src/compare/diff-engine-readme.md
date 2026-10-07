@@ -426,7 +426,7 @@ flowchart LR
 5. **컨트롤 kind 확장 동기화**: `DiffKind`가 확장되면(`image` 등) `mapControlKind`, `DEFAULT_KINDS`(history/compare), UI `kindLabel`을 같이 갱신.
 6. **표 텍스트 표시 계약 유지**: table 요약의 `cprev/csha/txt/props` 포맷 변경 시 `parseCellPreviewMap`/`formatCellPreviewDiff`를 같이 수정.
 7. **표 카드 fallback 정책**: 셀 미리보기 한계가 있어도 “변경 셀 수” 또는 “속성 해시 전/후”를 표시해 빈 카드가 나오지 않게 유지.
-8. **검증 루틴**: `npx tsc --noEmit` + UI 스모크(이력/문서 비교 둘 다) + 대표 시나리오(H-07, D-07) 재확인.
+8. **검증 루틴**: `pnpm exec tsc --noEmit` + UI 스모크(이력/문서 비교 둘 다) + 대표 시나리오(H-07, D-07) 재확인.
 
 새 동작은 **이력 전용 / alignment 전용 / 공통**을 먼저 나눈 뒤 §2·§3·§4에 반영하면 읽는 흐름이 유지됩니다.
 

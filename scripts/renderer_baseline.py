@@ -22,7 +22,8 @@ SAMPLES_DIR = ROOT / "samples"
 STUDIO_ROOT = ROOT / "rhwp-studio"
 DEFAULT_MANIFEST = ROOT / "scripts" / "renderer_baseline_manifest.json"
 DEFAULT_OUTPUT = ROOT / "output" / "renderer-baseline" / "latest"
-NPM_CMD = "npm.cmd" if sys.platform == "win32" else "npm"
+# Resolve mise's pnpm.exe on Windows, with pnpm.cmd as the shim fallback.
+PNPM_CMD = shutil.which("pnpm") or ("pnpm.cmd" if sys.platform == "win32" else "pnpm")
 ALLOWED_PROFILES = ("screen", "print", "high-quality", "fast-preview")
 ALLOWED_CANVASKIT_SURFACES = ("auto", "webgpu", "webgl", "software")
 
@@ -636,10 +637,9 @@ def capture_browser_baseline(
     report_path.unlink(missing_ok=True)
     dev_server = subprocess.Popen(
         [
-            NPM_CMD,
+            PNPM_CMD,
             "run",
             "dev",
-            "--",
             "--host",
             "0.0.0.0",
             "--port",

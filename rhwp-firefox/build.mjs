@@ -43,7 +43,7 @@ if (existsSync(DIST)) {
 // 1. Vite 빌드 (rhwp-studio → dist/)
 console.log('[1/4] Vite 빌드...');
 const studioDir = resolve(ROOT, 'rhwp-studio');
-run('npx', ['vite', 'build', '--config', resolve(__dirname, 'vite.config.ts')], studioDir);
+run('pnpm', ['exec', 'vite', 'build', '--config', resolve(__dirname, 'vite.config.ts')], studioDir);
 
 // index.html → viewer.html 이름 변경
 const indexHtml = resolve(DIST, 'index.html');

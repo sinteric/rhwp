@@ -757,22 +757,22 @@ jobs:
             target
           key: ${{ runner.os }}-render-diff-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Setup Node.js
+      - name: Set up mise toolchain
         if: ${{ steps.pdf-raster-runtime.outputs.available == 'true' }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
-          node-version: '22'
+          version: '2026.9.14'
 
       - name: Install Studio dependencies
         if: ${{ steps.pdf-raster-runtime.outputs.available == 'true' }}
         working-directory: rhwp-studio
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install Chromium
         if: ${{ steps.pdf-raster-runtime.outputs.available == 'true' }}
         working-directory: rhwp-studio
         run: |
-          browser_path=$(npx @puppeteer/browsers install chromium@"${RHWP_CHROMIUM_BUILD_ID}" --path .cache/puppeteer --format '{{path}}' | tail -n 1)
+          browser_path=$(pnpm exec browsers install chromium@"${RHWP_CHROMIUM_BUILD_ID}" --path .cache/puppeteer --format '{{path}}' | tail -n 1)
           browser_path=$(realpath "$browser_path")
           echo "CHROME_PATH=$browser_path" >> "$GITHUB_ENV"
 
@@ -790,8 +790,8 @@ jobs:
           node e2e/renderer-baseline-native-diff.mjs --self-test
           node --check e2e/run-render-diff.mjs
           python3 -m py_compile ../scripts/renderer_baseline.py
-          npm run e2e:renderer-contract
-          npm run e2e:canvaskit-font-coverage
+          pnpm run e2e:renderer-contract
+          pnpm run e2e:canvaskit-font-coverage
 
       - name: Run canvas visual diff and PDF report
         if: ${{ steps.pdf-raster-runtime.outputs.available == 'true' }}
@@ -809,7 +809,7 @@ jobs:
           RHWP_RENDER_DIFF_DIRECT_PDF_MAX_RATIO: '0.02'
           RHWP_RENDER_DIFF_DIRECT_PDF_RASTER_DPI: '144'
           RHWP_RENDER_DIFF_RHWP_BIN: ../target/debug/rhwp
-        run: npm run e2e:render-diff:ci
+        run: pnpm run e2e:render-diff:ci
 
       - name: Run selected CanvasKit readiness gate
         if: ${{ steps.pdf-raster-runtime.outputs.available == 'true' }}

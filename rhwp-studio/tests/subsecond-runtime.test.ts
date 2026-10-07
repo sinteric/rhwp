@@ -883,5 +883,5 @@ test('hot-patch dev wiring is declared in the manifests and the vite config', ()
   assert.match(studioPackage, /"subsecond:sync"[\s\S]*rhwp-subsecond-vite/);
   assert.match(studioPackage, /"subsecond:install"[\s\S]*cargo install dioxus-cli[\s\S]*--locked/);
   assert.match(studioPackage, /"subsecond:serve"[\s\S]*--package rhwp-subsecond[\s\S]*--hot-patch/);
-  assert.match(studioPackage, /"dev:subsecond"\s*:\s*"npm run subsecond:sync && RHWP_SUBSECOND=1 vite"/);
+  assert.match(studioPackage, /"dev:subsecond"\s*:\s*"pnpm run subsecond:sync && RHWP_SUBSECOND=1 vite"/);
 });

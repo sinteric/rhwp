@@ -23,7 +23,8 @@
     "document"
   ],
   "engines": {
-    "vscode": "^1.82.0"
+    "vscode": "^1.82.0",
+    "pnpm": ">=10.34.6 <11"
   },
   "categories": [
     "Visualization",
@@ -103,10 +104,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.webview.json",
-    "compile": "npm run typecheck && webpack --mode production",
+    "compile": "pnpm run typecheck && webpack --mode production",
     "watch": "webpack --mode development --watch",
-    "vscode:prepublish": "npm run compile",
-    "package": "vsce package"
+    "vscode:prepublish": "pnpm run compile",
+    "package": "pnpm dlx vsce package --no-dependencies"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
@@ -122,5 +123,6 @@
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "webpack": "^5.110.1",
     "webpack-cli": "^7.2.2"
-  }
+  },
+  "packageManager": "pnpm@10.34.6"
 }

@@ -215,8 +215,8 @@ const SUBSECOND_OUTCOMES: Record<string, SubsecondDiagnostic | undefined> = {
   'not-json': {
     level: 'warn',
     message:
-      '데브서버가 JSON 이 아닌 텍스트 프레임을 보냈다. `npm run subsecond:install` 이 고정한 ' +
-      'dioxus-cli 가 아닌 dx 가 떠 있는지 `npm run subsecond:serve` 터미널에서 확인한다.',
+      '데브서버가 JSON 이 아닌 텍스트 프레임을 보냈다. `pnpm run subsecond:install` 이 고정한 ' +
+      'dioxus-cli 가 아닌 dx 가 떠 있는지 `pnpm run subsecond:serve` 터미널에서 확인한다.',
   },
   'foreign-build-id': {
     level: 'warn',
@@ -228,7 +228,7 @@ const SUBSECOND_OUTCOMES: Record<string, SubsecondDiagnostic | undefined> = {
     level: 'warn',
     message:
       'HotReload 에 jump_table 이 없다. dx 가 패치 링크에 실패하면 이 모양이 되므로 ' +
-      '`npm run subsecond:serve` 터미널의 링크 오류부터 본다 (호스트가 unix 가 아니면 항상 실패한다).',
+      '`pnpm run subsecond:serve` 터미널의 링크 오류부터 본다 (호스트가 unix 가 아니면 항상 실패한다).',
   },
   'undeserializable-jump-table': {
     level: 'warn',
@@ -269,7 +269,7 @@ export function describeSubsecondSignal(signal: SubsecondSignal): SubsecondDiagn
         `${signal.reason}. 핫패치와 무관한 오류일 수도 있지만, subsecond 의 wasm apply_patch 는 ` +
         '실패를 반환값으로 돌려주지 않으므로 이 이벤트가 유일한 신호일 수 있다. ' +
         '다음: 콘솔의 Rust panic 메시지 → Network 탭의 `/wasm/librhwp-subsecond-patch-*.wasm` 응답 → ' +
-        '`npm run subsecond:serve` 터미널의 링크 오류.',
+        '`pnpm run subsecond:serve` 터미널의 링크 오류.',
     };
   }
   return (
@@ -278,7 +278,7 @@ export function describeSubsecondSignal(signal: SubsecondSignal): SubsecondDiagn
       message:
         `읽지 못한 결과 값 ${JSON.stringify(signal.code)}. ` +
         '`src/subsecond_dev.rs` 의 DevtoolsMessageOutcome::code() 와 이 표가 어긋났거나, ' +
-        '옛 WASM 번들(불리언을 돌려주던 판)이 로드돼 있다 — `npm run subsecond:sync` 를 다시 돌린다.',
+        '옛 WASM 번들(불리언을 돌려주던 판)이 로드돼 있다 — `pnpm run subsecond:sync` 를 다시 돌린다.',
     }
   );
 }

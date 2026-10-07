@@ -41,7 +41,7 @@ const VENDOR_NAMES = ['subsecond', 'Subsecond', 'dioxus', 'Dioxus'];
 
 /** 번들을 실제로 읽었다는 증거. 이게 없으면 "부재" 단언이 빈 문자열에서 공짜로 통과한다. */
 const BUNDLE_SENTINEL = 'document-view-changed';
-const BUILD_INSTRUCTION = '먼저 `npm --prefix rhwp-studio run build`';
+const BUILD_INSTRUCTION = '먼저 `pnpm --dir rhwp-studio run build`';
 
 function readStudioBundle(studioDist = STUDIO_DIST) {
   assert.ok(

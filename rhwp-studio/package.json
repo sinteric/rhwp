@@ -8,7 +8,7 @@
     "subsecond:install": "DX_VERSION=$(node ../scripts/dioxus-cli-version.mjs) && cargo install dioxus-cli --version \"$DX_VERSION\" --locked --root ../target/dioxus-cli",
     "subsecond:serve": "cd .. && target/dioxus-cli/bin/dx serve --web --package rhwp-subsecond --features subsecond-dev --hot-patch --port 7711 --addr 127.0.0.1 --open false --interactive true --inject-loading-scripts false",
     "subsecond:sync": "mkdir -p ../target/rhwp-subsecond-vite && cp ../target/dx/rhwp-subsecond/debug/web/public/wasm/rhwp-subsecond.js ../target/dx/rhwp-subsecond/debug/web/public/wasm/rhwp-subsecond_bg.wasm ../target/rhwp-subsecond-vite/",
-    "dev:subsecond": "npm run subsecond:sync && RHWP_SUBSECOND=1 vite",
+    "dev:subsecond": "pnpm run subsecond:sync && RHWP_SUBSECOND=1 vite",
     "build": "tsc && vite build",
     "build:no-hwpctrl": "RHWP_WITHOUT_HWPCTRL=1 tsc && RHWP_WITHOUT_HWPCTRL=1 vite build",
     "dev:no-hwpctrl": "RHWP_WITHOUT_HWPCTRL=1 vite",
@@ -81,15 +81,18 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vite-plugin-pwa": "^1.3.0",
-    "workbox-window": "^7.4.1"
-  },
-  "overrides": {
-    "serialize-javascript": "7.0.5"
+    "workbox-window": "^7.4.1",
+    "@puppeteer/browsers": "3.2.1"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
     "canvaskit-wasm": "^0.42.0",
     "pixelmatch": "^7.1.0",
     "pngjs": "^7.0.0"
+  },
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "pnpm": ">=10.34.6 <11",
+    "node": ">=24.0.0"
   }
 }

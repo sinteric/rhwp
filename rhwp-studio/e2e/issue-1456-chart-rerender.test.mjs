@@ -18,7 +18,7 @@
  *
  * 실행:
  *   cd rhwp-studio
- *   npx vite --host 127.0.0.1 --port 7700 &
+ *   pnpm exec vite --host 127.0.0.1 --port 7700 &
  *   # macOS: CHROME_PATH 지정 필요
  *   CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
  *     node e2e/issue-1456-chart-rerender.test.mjs --mode=headless

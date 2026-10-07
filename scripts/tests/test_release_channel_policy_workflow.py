@@ -147,22 +147,12 @@ class ReleaseChannelPolicyWorkflowTests(unittest.TestCase):
             f"사용자 표시 버전이 릴리스 버전과 다르다: {visible_versions}",
         )
 
-        lock_versions = {
-            path: json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))["packages"][
-                ""
-            ]["version"]
-            for path in (
-                "rhwp-studio/package-lock.json",
-                "rhwp-vscode/package-lock.json",
-                "rhwp-chrome/package-lock.json",
-                "rhwp-firefox/package-lock.json",
-            )
-        }
-        self.assertEqual(
-            set(lock_versions.values()),
-            {release_version},
-            f"root package-lock 버전이 릴리스 버전과 다르다: {lock_versions}",
-        )
+        for directory in ("rhwp-studio", "rhwp-vscode", "rhwp-chrome", "rhwp-firefox"):
+            with self.subTest(directory=directory):
+                manifest = json.loads((REPO_ROOT / directory / "package.json").read_text(encoding="utf-8"))
+                self.assertEqual(manifest["packageManager"], "pnpm@10.34.6")
+                self.assertTrue((REPO_ROOT / directory / "pnpm-lock.yaml").is_file())
+                self.assertFalse((REPO_ROOT / directory / "package-lock.json").exists())
 
         cargo_lock = tomllib.loads(
             (REPO_ROOT / "Cargo.lock").read_text(encoding="utf-8")
@@ -235,11 +225,11 @@ class ReleaseChannelPolicyWorkflowTests(unittest.TestCase):
             "working-directory: pkg",
             "Publish @rhwp/editor",
             "working-directory: npm/editor",
-            "npx vsce publish",
-            "npx ovsx publish",
+            "pnpm dlx vsce publish",
+            "pnpm dlx ovsx publish",
         ]:
             self.assertIn(expected, workflow)
-        self.assertEqual(workflow.count("npm publish --access public"), 2)
+        self.assertEqual(workflow.count("pnpm publish --access public --no-git-checks"), 2)
 
 
 if __name__ == "__main__":

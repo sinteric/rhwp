@@ -17,14 +17,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const studioRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(studioRoot, '..');
-const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const pnpmCmd = 'pnpm';
 
-export function spawnNpm(args, extraEnv = {}, stdio = 'inherit') {
-  return spawn(npmCmd, args, {
+export function spawnPnpm(args, extraEnv = {}, stdio = 'inherit') {
+  return spawn(pnpmCmd, args, {
     cwd: studioRoot,
     stdio,
-    // win32 의 npm 은 npm.cmd 다 — Node 20+ 부터 .cmd 직접 spawn 이 EINVAL 로
-    // 거절되므로 shell 경유로 띄운다(인자는 공백·메타문자 없는 고정값뿐이다).
+    // Windows shell resolves both the mise pnpm.exe and package-manager
+    // pnpm.cmd shims. Direct .cmd spawn is rejected by Node 20+.
     shell: process.platform === 'win32',
     env: {
       ...process.env,
@@ -119,7 +119,7 @@ export async function findAvailablePort(startPort, attempts = 20) {
 }
 
 /**
- * vite dev server 를 기동한다. npm.cmd 경유가 아니라 node 로 vite.js 를 직접
+ * vite dev server 를 기동한다. pnpm.cmd 경유가 아니라 node 로 vite.js 를 직접
  * 띄운다 — win32 에서 .cmd spawn 은 EINVAL 로 거절되고 shell 우회는 트리
  * 종료(SIGTERM)를 망가뜨리기 때문. readiness 대기와 로그 핸들 닫기는 호출자의
  * 몫으로 남긴다(waitForServer · 반환 객체의 stop()).

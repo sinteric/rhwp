@@ -21,7 +21,7 @@ origin이 `null`이거나 불투명한 환경의 연결은 SDK와 Studio 양쪽�
 ## 설치
 
 ```bash
-npm install @rhwp/editor
+pnpm add @rhwp/editor
 ```
 
 ## 빠른 시작 — 3줄이면 충분합니다
@@ -97,7 +97,7 @@ studio.destroy();
 브리지 전 계약(자동화·플러그인·hwpctrl·성능)을 한 번에 확인하려면 저장소에서:
 
 ```bash
-cd rhwp-studio && npm run gate:bridge
+cd rhwp-studio && pnpm run gate:bridge
 ```
 
 ## HWP 파일 로드
@@ -590,8 +590,8 @@ HWP 문서에서 사용된 한컴 전용 폰트(한컴바탕, HY명조 등)는 �
 ```bash
 # rhwp-studio 빌드
 cd rhwp-studio
-npm install
-npx vite build --base=/your-path/
+pnpm install --frozen-lockfile
+pnpm exec vite build --base=/your-path/
 
 # 빌드 결과물(dist/)을 서버에 배포
 ```
@@ -602,7 +602,7 @@ CDN 로드를 끕니다. 조판(줄바꿈·페이지 분할)은 내장 폰트 �
 변하지 않고, 화면 표시만 번들/시스템 글꼴로 대체됩니다:
 
 ```bash
-RHWP_DISABLE_EXTERNAL_WEBFONTS=1 npx vite build --base=/your-path/
+RHWP_DISABLE_EXTERNAL_WEBFONTS=1 pnpm exec vite build --base=/your-path/
 ```
 
 브라우저 확장 storage에 저장된 `disableExternalWebFonts` 설정이 있으면

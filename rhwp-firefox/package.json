@@ -13,5 +13,10 @@
   "devDependencies": {
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
+  },
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "pnpm": ">=10.34.6 <11",
+    "node": ">=24.0.0"
   }
 }

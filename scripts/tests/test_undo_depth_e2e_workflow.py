@@ -1,7 +1,7 @@
 """[#5959] undo depth 측정 게이트(#5769)의 CI 배선 계약.
 
 스냅샷 예산 축출 회귀는 실 wasm + 실 브라우저로만 잡힌다. 그래서 이 게이트는
-frontend-package-gates(실 wasm 빌드) 안에서 `npm run e2e:undo-depth` 로 단다.
+frontend-package-gates(실 wasm 빌드) 안에서 `pnpm run e2e:undo-depth` 로 단다.
 이 테스트는 그 배선이 사라지지 않게 고정한다. 파일명이 `test_*workflow*.py`
 패턴이라 test_workflow_contract_wiring.py 가 ci.yml 배선을 강제한다(#4080).
 """
@@ -48,7 +48,7 @@ class UndoDepthE2EGateWorkflowTests(unittest.TestCase):
             self.package_gates,
             "frontend-package-gates 에 게이트 단계가 없다",
         )
-        self.assertIn("npm run e2e:undo-depth", self.package_gates)
+        self.assertIn("pnpm run e2e:undo-depth", self.package_gates)
         self.assertIn(
             "name: Install headless Chrome",
             self.package_gates,
@@ -62,7 +62,7 @@ class UndoDepthE2EGateWorkflowTests(unittest.TestCase):
         self.assertLess(wasm_build, gate)
 
     def test_npm_script_routes_through_vite_runner(self) -> None:
-        """npm script 는 run-with-vite 러너 경유여야 한다 — CI 에 서버 기동이 필요하기 때문."""
+        """pnpm script 는 run-with-vite 러너 경유여야 한다 — CI 에 서버 기동이 필요하기 때문."""
         scripts = json.loads((STUDIO / "package.json").read_text(encoding="utf-8"))["scripts"]
         script = scripts["e2e:undo-depth"]
         self.assertIn("run-with-vite.mjs", script)
