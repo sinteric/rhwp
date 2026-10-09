@@ -16,6 +16,7 @@ use crate::renderer::typeset::{
 
 pub(super) struct HostSpacingInput<'a> {
     pub(super) para: &'a Paragraph,
+    pub(super) para_idx: usize,
     pub(super) ctrl_idx: usize,
     pub(super) table: &'a Table,
     pub(super) styles: &'a ResolvedStyleSet,
@@ -37,6 +38,7 @@ pub(super) fn resolve(
 ) -> HostSpacingResult {
     let HostSpacingInput {
         para,
+        para_idx,
         ctrl_idx,
         table,
         styles,
@@ -250,7 +252,19 @@ pub(super) fn resolve(
     } else if suppress_empty_anchor_spacing && !is_column_top {
         outer_top
     } else {
-        (if !is_column_top { sb } else { 0.0 }) + outer_top
+        (if !is_column_top {
+            sb
+        } else if is_tac {
+            crate::renderer::layout::tac_explicit_boundary_stored_spacing_px(
+                profile(),
+                para,
+                para_idx,
+                sb,
+                dpi,
+            )
+        } else {
+            0.0
+        }) + outer_top
     };
     // [#6147] layout `stored_empty_anchor_band_host_tail_px` 와 대칭 — 저장 사다리가
     // host 줄 advance 만 증언하는 빈 앵커 밴드는 그 줄을 흐름에 계상한다. `outer_bottom`

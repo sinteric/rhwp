@@ -47,6 +47,59 @@ fn tac_tables_keep_stored_top_spacing_at_section_start_and_forced_page_break() {
     }
 }
 
+#[test]
+fn forced_page_tac_spacing_comes_from_the_saved_line_origin() {
+    use rhwp::document_core::DocumentCore;
+    use rhwp::renderer::render_tree::RenderNode;
+
+    fn first_table(node: &RenderNode) -> Option<&RenderNode> {
+        if matches!(node.node_type, RenderNodeType::Table(_)) {
+            return Some(node);
+        }
+        node.children.iter().find_map(first_table)
+    }
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/footnote-01.hwp");
+    let original = std::fs::read(path).expect("read source");
+    let mut forced = rhwp::parser::parse_document(&original).expect("parse source");
+    forced.sections[0].paragraphs[0].column_type = rhwp::model::paragraph::ColumnBreakType::Page;
+    forced.sections[0]
+        .paragraphs
+        .insert(0, rhwp::model::paragraph::Paragraph::default());
+    let saved_vpos = forced.sections[0].paragraphs[1].line_segs[0].vertical_pos;
+    assert!(saved_vpos > 0, "source has a saved line origin");
+    let saved_bytes = rhwp::serializer::hwpx::serialize_hwpx(&forced).expect("serialize saved");
+    // Zero vpos is normalized into a reconstructed ladder by the loader. Keep
+    // both probes on the valid saved-origin path to isolate source spacing.
+    let reduced_vpos = saved_vpos / 2;
+    assert!(reduced_vpos > 0);
+    forced.sections[0].paragraphs[1].line_segs[0].vertical_pos = reduced_vpos;
+    let reduced_bytes = rhwp::serializer::hwpx::serialize_hwpx(&forced).expect("serialize reduced");
+
+    let table_top = |bytes: &[u8], expected_vpos: i32| {
+        let core = DocumentCore::from_bytes(bytes).expect("parse probe");
+        assert_eq!(
+            core.page_count(),
+            7,
+            "forced page remains owned exactly once"
+        );
+        let tree = core.build_page_render_tree(1).expect("forced page");
+        assert_eq!(
+            core.document().sections[0].paragraphs[1].line_segs[0].vertical_pos,
+            expected_vpos,
+            "probe retains its valid source line origin"
+        );
+        first_table(&tree.root).expect("TAC table").bbox.y
+    };
+    let delta = table_top(&saved_bytes, saved_vpos) - table_top(&reduced_bytes, reduced_vpos);
+    let source_origin_px = f64::from(saved_vpos - reduced_vpos) / 75.0;
+    assert!(
+        (delta - source_origin_px).abs() < 0.5,
+        "saved origin is consumed once; full paragraph spacing is not substituted: \
+         delta={delta}, source={source_origin_px}"
+    );
+}
+
 fn json_number(json: &str, key: &str) -> f64 {
     let pattern = format!("\"{}\":", key);
     let start = json.find(&pattern).expect("json key not found") + pattern.len();

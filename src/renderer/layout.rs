@@ -1226,6 +1226,30 @@ fn tac_column_top_stored_vpos_px(para: &Paragraph, spacing_before: f64, dpi: f64
     (vpos_px <= spacing_before + 0.5).then_some(vpos_px)
 }
 
+/// Preserve a saved HWPX TAC line origin at an explicit page/section boundary.
+/// Native HWP5 and inline placement already own their origins. The XML block
+/// fallback shares this saved position between fit and paint, rather than full
+/// paragraph spacing. Natural transitions still trim paragraph spacing.
+pub(crate) fn tac_explicit_boundary_stored_spacing_px(
+    profile: crate::model::provenance::LayoutCompatibilityProfile,
+    para: &Paragraph,
+    para_index: usize,
+    spacing_before: f64,
+    dpi: f64,
+) -> f64 {
+    if !profile.hwpx_container()
+        || profile.session_edited()
+        || !(para_index == 0
+            || matches!(
+                para.column_type,
+                crate::model::paragraph::ColumnBreakType::Page
+            ))
+    {
+        return 0.0;
+    }
+    tac_column_top_stored_vpos_px(para, spacing_before, dpi).unwrap_or(0.0)
+}
+
 fn para_has_non_whitespace_text(para: &Paragraph) -> bool {
     para.text
         .chars()
@@ -13400,23 +13424,21 @@ impl LayoutEngine {
                             } else {
                                 0.0
                             };
-                        // Stored first-line positions keep paragraph spacing
-                        // at a section start or an explicit page break. Natural
-                        // page and column transitions still trim it.
-                        let keeps_top_spacing = para_index == 0
-                            || matches!(
-                                para.column_type,
-                                crate::model::paragraph::ColumnBreakType::Page
+                        let spacing_before = styles
+                            .para_styles
+                            .get(ps_id)
+                            .map(|ps| ps.spacing_before)
+                            .unwrap_or(0.0);
+                        if !is_column_top {
+                            y_offset += spacing_before.max(0.0);
+                        } else {
+                            y_offset += tac_explicit_boundary_stored_spacing_px(
+                                self.profile.get(),
+                                para,
+                                para_index,
+                                spacing_before,
+                                self.dpi,
                             );
-                        if !is_column_top || keeps_top_spacing {
-                            let spacing_before = styles
-                                .para_styles
-                                .get(ps_id)
-                                .map(|ps| ps.spacing_before)
-                                .unwrap_or(0.0);
-                            if spacing_before > 0.0 {
-                                y_offset += spacing_before;
-                            }
                         }
                         if outer_margin_top_px > 0.0 {
                             y_offset += outer_margin_top_px;
