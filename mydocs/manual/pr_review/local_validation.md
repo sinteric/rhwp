@@ -74,8 +74,9 @@ rhwp-wasm-build
 set "CARGO_TARGET_DIR="
 ```
 
-문서의 명령은 고정 `--test-threads` 값을 쓰지 않는다. nextest 기본 동시성을 먼저 사용하고, 현재
-host의 논리 CPU·메모리·동시 작업을 확인한 뒤에만 `--test-threads <현재 환경에 맞는 값>`으로 조정한다.
+테스트 실행 동시성은 기본 1이다. 현재 host의 논리 CPU·메모리·I/O·동시 작업과
+setup·느린 테스트를 진단하고, 동일 조건의 1 대 2 비교에서 이득이 확인된 경우에만
+`--test-threads <측정한_예외값>`으로 조정한다. 테스트 내부의 동시성 동작은 유지한다.
 논리 CPU 확인은 macOS `sysctl -n hw.logicalcpu`, Linux `getconf _NPROCESSORS_ONLN`, PowerShell
 `[Environment]::ProcessorCount`를 사용한다. CPU 수를 그대로 쓰는 것도 의무가 아니며, 메모리가
 부족하거나 다른 작업이 있으면 더 낮은 값을 선택하고 실제 실행 시간을 기록한다.
@@ -84,7 +85,7 @@ host의 논리 CPU·메모리·동시 작업을 확인한 뒤에만 `--test-thre
 cargo nextest run --locked \
   --cargo-profile release-test \
   --target-dir target/pr-review \
-  --tests --test-threads <현재_환경에_맞는_값> --no-fail-fast
+  --tests --test-threads 1 --no-fail-fast
 ~~~
 
 `cargo test --profile release-test --tests`는 이 전체 integration 회귀의 대체 명령이 아니다.
@@ -192,7 +193,7 @@ RHWP_BIN=target/pr-review/release-test/rhwp \
 
 `cargo build`는 **컴파일 전용 준비 단계**이며 테스트를 실행하지 않는다. 시각 보정 중에는 이 명령으로
 빠르게 최신 SVG를 확인하되, code head가 바뀐 뒤 PR 검증을 완료하려면 위의 전체 `cargo nextest run
-... --tests --test-threads <현재_환경에_맞는_값> --no-fail-fast`를 다시 성공시켜야 한다. 하네스 옵션과 기준 PDF provenance는
+... --tests --test-threads 1 --no-fail-fast`를 다시 성공시켜야 한다. 하네스 옵션과 기준 PDF provenance는
 [`tools/fidelity_compare/README.md`](../../../tools/fidelity_compare/README.md)를 따른다.
 
 2026-08-09 Linux 검증 호스트(`ubuntu-ted`, Intel Xeon E5640 16 vCPU, RAM 15 GiB)에서 이 명령의 fixed
@@ -218,7 +219,7 @@ Set-Location 'C:\\Users\\admin\\Desktop\\rhwp\\rhwp'
 cargo nextest run `
   --cargo-profile release-test `
   --target-dir target/pr-review `
-  --tests --test-threads <현재_환경에_맞는_값> --no-fail-fast
+  --tests --test-threads 1 --no-fail-fast
 ~~~
 
 PowerShell의 `target/pr-review`는 Windows에서 정상 경로로 해석된다. WSL 경로와 Windows 경로, 또는 서로
@@ -427,7 +428,7 @@ merge 판단에서는 다음 경계를 적용한다.
 cargo nextest run --locked \
   --cargo-profile release-test \
   --target-dir target/pr-review \
-  --tests --test-threads <현재_환경에_맞는_값> --no-fail-fast
+  --tests --test-threads 1 --no-fail-fast
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 ~~~
@@ -641,7 +642,7 @@ cargo test --locked --release --target-dir target/pr-review --lib
 cargo nextest run --locked \
   --cargo-profile release-test \
   --target-dir target/pr-review \
-  --tests --test-threads <현재_환경에_맞는_값> --no-fail-fast
+  --tests --test-threads 1 --no-fail-fast
 cargo test --locked --profile release-test --target-dir target/pr-review --features native-skia --lib
 node scripts/run-rust-test.mjs issue_2225_missing_picture_placeholder -- \
   --cargo-profile release-test --target-dir target/pr-review --features native-skia

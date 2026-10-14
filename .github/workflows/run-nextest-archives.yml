@@ -62,6 +62,7 @@ jobs:
       # 집계 job은 archive runnable 수와 worker Summary run 합계를 대조한다.
       - name: Run ${{ inputs.label }}
         env:
+          NEXTEST_TEST_THREADS: "1"
           COUNT_LABEL: ${{ inputs.count_label }}
           FILTERSET: ${{ inputs.filterset }}
           PARTITION: ${{ inputs.partition }}

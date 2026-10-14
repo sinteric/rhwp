@@ -192,7 +192,7 @@ class CiImpactPolicyWorkflowTests(unittest.TestCase):
             self.assertNotIn("skip_eligible", workflow)
 
     def test_controller_contract_suite_is_wired_into_ci(self) -> None:
-        self.assertIn("node --test scripts/tests/ci-impact-controller-contract.test.cjs", self.ci_workflow)
+        self.assertIn("node --test --test-concurrency=1 scripts/tests/ci-impact-controller-contract.test.cjs", self.ci_workflow)
         self.assertIn("github.event.pull_request.base.ref == 'devel'", self.workflow)
         self.assertIn("github.event.workflow_run.pull_requests[0].base.ref == 'devel'", self.workflow)
         self.assertIn("BASE_REF: ${{ steps.resolve.outputs.base_ref }}", self.workflow)

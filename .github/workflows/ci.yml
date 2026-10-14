@@ -32,6 +32,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_TEST_THREADS: "1"
+  NEXTEST_TEST_THREADS: "1"
 
 # [Task #1192 F] 같은 PR 에 새 push 가 오면 진행 중 run 을 취소해 중복 실행 제거.
 # Branch push에서는 검증 CI를 시작하지 않는다. tag/manual 실행은 명시 실행이다.
@@ -989,13 +991,13 @@ jobs:
 
       - name: Validate CI impact classifier
         run: |
-          node --test scripts/tests/ci-impact-classifier.test.cjs
-          node --test scripts/tests/ci-impact-policy.test.cjs
-          node --test scripts/tests/ci-impact-controller-contract.test.cjs
-          node --test scripts/tests/ci-workflow-evidence.test.cjs
-          node --test scripts/tests/collect-postmerge-duration-data.test.mjs
+          node --test --test-concurrency=1 scripts/tests/ci-impact-classifier.test.cjs
+          node --test --test-concurrency=1 scripts/tests/ci-impact-policy.test.cjs
+          node --test --test-concurrency=1 scripts/tests/ci-impact-controller-contract.test.cjs
+          node --test --test-concurrency=1 scripts/tests/ci-workflow-evidence.test.cjs
+          node --test --test-concurrency=1 scripts/tests/collect-postmerge-duration-data.test.mjs
           python3 -m unittest scripts/tests/test_postmerge_duration_workflow.py
-          node --test scripts/tests/ci-impact-report.test.cjs
+          node --test --test-concurrency=1 scripts/tests/ci-impact-report.test.cjs
           python3 -m unittest scripts/tests/test_ci_impact_workflow.py
 
       - name: Validate Rust test suite manifest
@@ -1040,9 +1042,9 @@ jobs:
           if [[ -n "$policy_base_ref" ]]; then
             base_args=(--base-ref "$policy_base_ref")
           fi
-          node --test scripts/tests/rust-test-suite-manifest.test.mjs
+          node --test --test-concurrency=1 scripts/tests/rust-test-suite-manifest.test.mjs
           node scripts/rust-test-suite-manifest.mjs --check "${base_args[@]}"
-          node --test scripts/tests/rust-unit-test-tiers.test.mjs
+          node --test --test-concurrency=1 scripts/tests/rust-unit-test-tiers.test.mjs
           node scripts/rust-unit-test-tiers.mjs --check "${base_args[@]}"
           node scripts/run-rust-test.mjs --print issue_1035_alignment
 
@@ -1080,10 +1082,10 @@ jobs:
       # 추가하면 그 테스트가 실패하므로 여기 한 줄을 같이 넣어야 한다.
       - name: Validate workflow contracts
         run: |
-          node --test scripts/tests/issue-form-labels.test.mjs
-          node --test scripts/tests/verify-trusted-postmerge-ci-reuse.test.mjs
-          node --test scripts/tests/verify-trusted-postmerge-ci-reuse-squash.test.mjs
-          node --test scripts/tests/verify-trusted-postmerge-review-bridge.test.mjs
+          node --test --test-concurrency=1 scripts/tests/issue-form-labels.test.mjs
+          node --test --test-concurrency=1 scripts/tests/verify-trusted-postmerge-ci-reuse.test.mjs
+          node --test --test-concurrency=1 scripts/tests/verify-trusted-postmerge-ci-reuse-squash.test.mjs
+          node --test --test-concurrency=1 scripts/tests/verify-trusted-postmerge-review-bridge.test.mjs
           python3 -m unittest scripts/tests/test_cache_sweep_workflow.py
           python3 -m unittest scripts/tests/test_cancel_stale_pr_runs_workflow.py
           python3 -m unittest scripts/tests/test_ci_impact_policy_workflow.py
@@ -1385,16 +1387,16 @@ jobs:
           npm --prefix rhwp-vscode ci --no-audit --prefer-offline
 
       - name: Verify WASM bindings and editor embed contract
-        run: node --test scripts/frontend-wasm-bindings.test.mjs scripts/frontend-editor-embed.test.mjs
+        run: node --test --test-concurrency=1 scripts/frontend-wasm-bindings.test.mjs scripts/frontend-editor-embed.test.mjs
 
       - name: Run editor package tests when declared
         run: npm --prefix npm/editor test --if-present
 
       - name: Run shared and extension service worker tests
-        run: node --test rhwp-shared/sw/*.test.js rhwp-chrome/sw/*.test.mjs rhwp-firefox/sw/*.test.mjs
+        run: node --test --test-concurrency=1 rhwp-shared/sw/*.test.js rhwp-chrome/sw/*.test.mjs rhwp-firefox/sw/*.test.mjs
 
       - name: Run Chrome extension options UI tests
-        run: node --test rhwp-chrome/options.test.mjs
+        run: node --test --test-concurrency=1 rhwp-chrome/options.test.mjs
 
       - name: Run Studio unit tests
         run: npm --prefix rhwp-studio run test
@@ -1444,16 +1446,16 @@ jobs:
           npm --prefix rhwp-firefox run build
 
       - name: Verify extension distributions
-        run: node --test scripts/frontend-extension-dist.test.mjs
+        run: node --test --test-concurrency=1 scripts/frontend-extension-dist.test.mjs
 
       - name: Compile VS Code extension
         run: npm --prefix rhwp-vscode run compile
 
       - name: Verify VS Code webview outline keyboard contract
-        run: node --test scripts/frontend-vscode-outline.test.mjs
+        run: node --test --test-concurrency=1 scripts/frontend-vscode-outline.test.mjs
 
       - name: Verify font asset contracts
-        run: node --test scripts/frontend-font-assets.test.mjs
+        run: node --test --test-concurrency=1 scripts/frontend-font-assets.test.mjs
 
       - name: Save frontend WASM cargo cache
         if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/devel' || github.ref == 'refs/heads/main') && steps.frontend_wasm_cargo_cache_restore.outputs.cache-hit != 'true' }}

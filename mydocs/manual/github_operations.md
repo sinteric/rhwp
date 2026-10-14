@@ -13,6 +13,24 @@ last_verified: 2026-09-14
 > [배포 가이드](publish_guide.md)를 함께 따른다. 이 문서는 그 절차를 복제하지 않고 운영 변경의
 > 분류, 비례 검증, 적용 후 관찰과 복구를 담당한다.
 
+## 기본 CI 검증 범위와 동시성
+
+일반 Rust·Nextest·Node 테스트 실행기는 동시성 1을 기본으로 사용한다. 컴파일러의
+내부 병렬성과 제품의 goroutine·thread 검증은 별도다. 기존 A/B/C/D archive는 서로
+배타적인 source-side lib 및 integration inventory를 보호하는 구성으로 유지한다.
+archive의 runnable 수·worker 합계·provenance·승격 조건과 기존 native Skia·WASM·배포
+package 검증은 생략하지 않는다. 새 shard나 worker 증설은 queue/setup/build/느린
+case와 CPU·메모리·I/O 진단, 동일 조건 비교의 이득을 확인한 뒤 별도로 결정한다.
+
+기본 CI는 단위·핵심 동작과 필요한 실제 binding/package 경계에 집중한다. 기존 실제
+브라우저 editor wiring과 native render 검사는 mock이 확인할 수 없는 핵심 출력·연결을
+고정 public fixture와 격리된 hosted 환경에서 검증한다. 해당 입력 변경을 매 PR에서
+차단해야 하며 기존 선택기·시간 예산·실패 gate를 유지한다. 추가 컴포넌트·통합·race·E2E는
+각각 보호할 핵심 실패, 작은 대안의 한계, 매 PR 자동 확인 필요성, 안정적인 격리·자원 예산을
+검토한다. CI에 편입하지 않은 관련 검증은 PR 제출 시 로컬에서 실행하고 SHA·환경·명령·범위·
+결과·재시도·미검증 항목을 본문이나 코멘트에 남긴다. 수동 Actions나 nightly를 대신 만들지 않는다.
+순차 step의 준비·검증 시간과 실제 skip·실패를 구분하고 필수 실패·취소를 성공으로 표시하지 않는다.
+
 ## 병합 후 자동 실행 정책 (#7070)
 
 검증 CI는 PR에서 완료한다. main/devel branch push는 CI·CodeQL·Adapter inter-diff·Proptest

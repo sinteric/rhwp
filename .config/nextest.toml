@@ -3,6 +3,9 @@
 # 긴 작업을 전체 실행 시간과 겹치게 한다.
 nextest-version = { required = "0.9.91", recommended = "0.9.140" }
 
+[profile.default]
+test-threads = 1
+
 [[profile.default.overrides]]
 filter = "test(/(^|::)overflow_cell_baseline::/)"
 priority = 100
