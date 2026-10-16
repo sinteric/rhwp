@@ -118,16 +118,14 @@ fn synthesize_hwpx_bomb_document() -> (Vec<u8>, String) {
     let bomb_path = (0..archive.len())
         .find_map(|index| {
             let entry = archive.by_index(index).ok()?;
-            entry
-                .name()
-                .starts_with("BinData/")
-                .then(|| entry.name().to_string())
+            let name = entry.name().ok()?;
+            name.starts_with("BinData/").then(|| name.into_owned())
         })
         .expect("HWPX 숙주에 BinData ZIP 엔트리가 있어야 함");
     let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).expect("숙주 ZIP 엔트리 읽기");
-        let path = entry.name().to_string();
+        let path = entry.name().expect("zip 항목 이름").into_owned();
         let compression = if path == "mimetype" {
             CompressionMethod::Stored
         } else {
