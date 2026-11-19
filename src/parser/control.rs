@@ -1079,7 +1079,9 @@ fn parse_form_control(ctrl_data: &[u8], child_records: &[Record]) -> Control {
 /// UTF-16LE 바이트를 String으로 디코딩
 fn decode_utf16le(data: &[u8]) -> String {
     let u16s: Vec<u16> = data
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     String::from_utf16_lossy(&u16s)

@@ -1281,6 +1281,30 @@ fn tac_column_top_stored_vpos_px(para: &Paragraph, spacing_before: f64, dpi: f64
     (vpos_px <= spacing_before + 0.5).then_some(vpos_px)
 }
 
+/// Preserve a saved HWPX TAC line origin at an explicit page/section boundary.
+/// Native HWP5 and inline placement already own their origins. The XML block
+/// fallback shares this saved position between fit and paint, rather than full
+/// paragraph spacing. Natural transitions still trim paragraph spacing.
+pub(crate) fn tac_explicit_boundary_stored_spacing_px(
+    profile: crate::model::provenance::LayoutCompatibilityProfile,
+    para: &Paragraph,
+    para_index: usize,
+    spacing_before: f64,
+    dpi: f64,
+) -> f64 {
+    if !profile.hwpx_container()
+        || profile.session_edited()
+        || !(para_index == 0
+            || matches!(
+                para.column_type,
+                crate::model::paragraph::ColumnBreakType::Page
+            ))
+    {
+        return 0.0;
+    }
+    tac_column_top_stored_vpos_px(para, spacing_before, dpi).unwrap_or(0.0)
+}
+
 pub(crate) fn para_has_non_whitespace_text(para: &Paragraph) -> bool {
     para.text
         .chars()
@@ -15796,15 +15820,23 @@ impl LayoutEngine {
                                 }
                             }
                         }
+                        let spacing_before = styles
+                            .para_styles
+                            .get(ps_id)
+                            .map(|ps| ps.spacing_before)
+                            .unwrap_or(0.0);
                         if !is_column_top && !host_text_precedes {
-                            let spacing_before = styles
-                                .para_styles
-                                .get(ps_id)
-                                .map(|ps| ps.spacing_before)
-                                .unwrap_or(0.0);
                             if spacing_before > 0.0 {
                                 y_offset += spacing_before;
                             }
+                        } else if is_column_top {
+                            y_offset += tac_explicit_boundary_stored_spacing_px(
+                                self.profile.get(),
+                                para,
+                                para_index,
+                                spacing_before,
+                                self.dpi,
+                            );
                         }
                         if outer_margin_top_px > 0.0 {
                             y_offset += outer_margin_top_px;
@@ -18060,7 +18092,7 @@ impl LayoutEngine {
                 insert_before_para_text(
                     col_node,
                     para_index,
-                    temp_parent.children.drain(..).collect(),
+                    std::mem::take(&mut temp_parent.children),
                 );
             } else if is_paper_based {
                 let mut temp_parent = RenderNode::new(

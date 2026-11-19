@@ -689,7 +689,7 @@ fn parse_para_text(data: &[u8]) -> ParaTextParts {
                     .filter_map(|(i, bytes)| (bytes == [0x07, 0x20]).then_some(char_count + i)),
             );
             char_offsets.extend(start_cu..end_cu);
-            text.extend(data[run_start..pos].chunks_exact(2).map(|c| {
+            text.extend(data[run_start..pos].as_chunks::<2>().0.iter().map(|c| {
                 char::from_u32(u16::from_le_bytes([c[0], c[1]]) as u32).unwrap_or('\u{FFFD}')
             }));
             char_count += (end_cu - start_cu) as usize;
@@ -1499,7 +1499,9 @@ fn parse_ctrl_data_field_name(data: &[u8]) -> Option<String> {
         return None;
     }
     let wchars: Vec<u16> = name_bytes[..name_len * 2]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     let name = String::from_utf16_lossy(&wchars);

@@ -1263,8 +1263,10 @@ pub fn hwp_summary_indicates_hwp3_era(raw: &[u8]) -> bool {
     }
     // UTF-16LE 디코딩
     let utf16: Vec<u16> = raw
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
         .collect();
     let text = String::from_utf16_lossy(&utf16);
     // HWP3 시대 (1990-2003) 의 년 검출 — HWP5 도입 (2007년) 이전

@@ -4962,9 +4962,7 @@ impl DocumentCore {
 
     /// 모든 구역을 dirty로 표시한다.
     pub(crate) fn mark_all_sections_dirty(&mut self) {
-        for d in &mut self.dirty_sections {
-            *d = true;
-        }
+        self.dirty_sections.fill(true);
         self.render_normalization
             .section_revisions
             .resize(self.document.sections.len(), 0);
@@ -5308,9 +5306,7 @@ impl DocumentCore {
         self.para_column_map
             .resize_with(self.document.sections.len(), Vec::new);
         self.para_column_map[section_index] = vec![0; paragraph_count];
-        for offset in &mut self.para_offset {
-            *offset = 0;
-        }
+        self.para_offset.fill(0);
         self.deferred_pagination_descriptor = None;
         self.invalidate_page_tree_cache();
         self.body_page_field_error = None;
@@ -6207,9 +6203,7 @@ impl DocumentCore {
 
         let issue2424_cleanup_started = issue2424_profile_enabled.then(std::time::Instant::now);
         // para_offset 리셋 (수렴 감지 완료)
-        for off in &mut self.para_offset {
-            *off = 0;
-        }
+        self.para_offset.fill(0);
 
         let issue2424_cleanup_elapsed = issue2424_cleanup_started
             .map(|started| started.elapsed())

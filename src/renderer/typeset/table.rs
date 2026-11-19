@@ -114,6 +114,7 @@ pub(super) fn format_with_storage<S: crate::storage::Storage>(
     } = host_spacing::resolve(
         host_spacing::HostSpacingInput {
             para,
+            para_idx,
             ctrl_idx,
             table,
             styles,
