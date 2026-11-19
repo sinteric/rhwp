@@ -1,10 +1,19 @@
 [package]
+rust-version = "1.93.1"
+include = [
+    "/Cargo.toml",
+    "/src/**",
+    "/LICENSE",
+    "/README.md"
+]
 name = "rhwp-password-crypto"
 version = "0.1.0"
 edition = "2021"
 description = "Shared HWP3, HWP5, and HWPX password cryptography for rhwp"
 license = "MIT"
-publish = false
+publish = ["crates-io"]
+repository = "https://github.com/edwardkim/rhwp"
+readme = "README.md"
 
 [dependencies]
 aes = "0.9"

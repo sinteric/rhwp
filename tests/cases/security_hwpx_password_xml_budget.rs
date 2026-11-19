@@ -67,7 +67,7 @@ fn password_prepass_bounds_unprotected_xml_members_before_the_reader() {
             continue;
         }
         writer
-            .start_file(input.name().expect("zip 항목 이름"), options())
+            .start_file(input.name().expect("ZIP 엔트리 이름"), options())
             .unwrap();
         std::io::copy(&mut input, &mut writer).unwrap();
     }

@@ -4,7 +4,13 @@ use super::*;
 
 impl DocumentCore {
     /// <p> 태그 내부의 인라인 콘텐츠를 파싱하여 Paragraph에 채운다.
-    pub(crate) fn parse_inline_content(&mut self, para: &mut Paragraph, html: &str) {
+    /// `block_style` 은 감싼 블록(`<p>`·`<li>`)의 style 이다. 그 글자 속성도 안쪽 글에 이어진다.
+    pub(crate) fn parse_inline_content(
+        &mut self,
+        para: &mut Paragraph,
+        html: &str,
+        block_style: &str,
+    ) {
         let mut full_text = String::new();
         // (char_start, char_end, char_shape_id) 형태의 스타일 범위
         let mut style_runs: Vec<(usize, usize, u32)> = Vec::new();
@@ -16,7 +22,11 @@ impl DocumentCore {
         let mut pos = 0;
 
         // 열린 서식 요소(span·b·i·u 등)의 이름과 style. 서식은 닫힐 때까지 안쪽 글에 이어진다.
+        // 블록 style 은 맨 바깥에 둔다. 이름이 비어 있어 어느 닫는 태그와도 짝지어지지 않는다.
         let mut open_styles: Vec<(String, String)> = Vec::new();
+        if !block_style.is_empty() {
+            open_styles.push((String::new(), block_style.to_string()));
+        }
 
         while pos < len {
             if chars[pos] == '<' {
@@ -118,6 +128,15 @@ impl DocumentCore {
                 Some(off)
             })
             .collect();
+
+        // 첫 서식 구간 앞의 평문에도 구간을 연다. 안 열면 문단의 첫 CharShapeRef 가 0 에서
+        // 시작하지 않아, 그 서식(굵게 등)이 앞 평문까지 덮는다.
+        if let Some(&(first_start, _, _)) = style_runs.first() {
+            if first_start > 0 {
+                let char_shape_id = self.css_to_char_shape_id("");
+                style_runs.insert(0, (0, first_start, char_shape_id));
+            }
+        }
 
         // 스타일 범위를 CharShapeRef로 변환
         for (start, _end, char_shape_id) in &style_runs {
@@ -254,10 +273,10 @@ impl DocumentCore {
         cs.bold = parse_css_value(&css_lower, "font-weight")
             .is_some_and(|w| w.starts_with("bold") || w.parse::<u16>().is_ok_and(|n| n >= 600));
 
-        // font-style
-        let is_italic =
-            css_lower.contains("font-style:italic") || css_lower.contains("font-style: italic");
-        cs.italic = is_italic;
+        // font-style — 굵기처럼 처음 찾은 값을 따른다. 그래야 기울인 블록 안
+        // `<span style="font-style:normal">` 이 기울지 않는다.
+        cs.italic =
+            parse_css_value(&css_lower, "font-style").is_some_and(|s| s.starts_with("italic"));
 
         // color
         if let Some(color_str) = parse_css_value(&css_lower, "color") {
@@ -456,7 +475,7 @@ impl DocumentCore {
     /// 🔴 언어 슬롯마다 **글꼴 목록이 다르다**(실측한 문서: HANGUL·LATIN 8개, OTHER·USER 7개.
     /// 같은 index 가 슬롯마다 다른 글꼴을 가리킨다).
     /// 그래서 하나의 ID 를 7칸에 복사하면 안 되고, **슬롯마다 찾거나 넣어서 각자의 index** 를 쓴다.
-    fn find_or_register_font_ids(&mut self, name: &str) -> Option<[u16; 7]> {
+    pub(crate) fn find_or_register_font_ids(&mut self, name: &str) -> Option<[u16; 7]> {
         let trimmed = name.trim();
         // 총칭 글꼴은 등록하지 않는다 — 이름이 아니라 분류다.
         const GENERIC: [&str; 8] = [
@@ -478,6 +497,15 @@ impl DocumentCore {
         let name_lower = trimmed.to_lowercase();
         let faces = &mut self.document.doc_info.font_faces;
         if faces.is_empty() {
+            return None;
+        }
+        // 모든 슬롯이 등록 가능한지 먼저 확인한다. 뒤 슬롯의 상한 오류로
+        // 앞 슬롯에만 새 글꼴이 남는 부분 변경을 만들지 않는다.
+        if faces.iter().take(7).any(|slot| {
+            slot.iter()
+                .position(|font| font.name.to_lowercase() == name_lower)
+                .map_or(slot.len() >= 256, |index| u16::try_from(index).is_err())
+        }) {
             return None;
         }
         let slot_count = faces.len().min(7);

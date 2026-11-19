@@ -10,8 +10,9 @@
  *   3. 최종 fallback → generic serif/sans-serif
  */
 
-import { getDetectedOSFonts, REGISTERED_FONTS } from './font-loader.ts';
-import { resolveLocalFont } from './local-fonts.ts';
+import { getDetectedOSFonts, hasLoadedLocalFontFamily, REGISTERED_FONTS } from './font-loader.ts';
+import { getLocalFontState, resolveLocalFont } from './local-fonts.ts';
+import { TEXT_SYMBOL_FONT_FAMILIES } from './text-symbol-font.ts';
 
 import {
   FONT_RULE_DISPLAY_CHAIN_POLICY_IDS,
@@ -97,6 +98,11 @@ export function setDocumentFontSubstitutions(
     next.set(key, families);
   }
   documentFontSubstitutions = next;
+}
+
+/** 엔진이 준 언어별 체인과 대조할 선언 대체 후보를 반환한다. */
+export function documentSubstituteFamilies(fontName: string): readonly string[] {
+  return documentFontSubstitutions.get(normalizedFamilyKey(fontName)) ?? [];
 }
 
 function confirmedFontName(
@@ -191,6 +197,10 @@ function installedFaceName(
 ): string | null {
   if (!fontName) return null;
   if (confirmedLocalFonts === undefined) {
+    // 같은 family의 한글·영문 프로그램은 단일 OS face로 확정할 수 없다.
+    // 이미 로드한 실제 프로그램의 CSS family까지 모호한 이름으로 버리면
+    // 원본 OTF를 공급하고도 호환 대체(예: 옥수수 → 돋움)로 그리게 된다.
+    if (hasLoadedLocalFontFamily(fontName)) return fontName;
     const record = resolveLocalFont(fontName);
     if (record) return localRecordCssFamily(fontName, record);
   } else {
@@ -200,6 +210,10 @@ function installedFaceName(
     // 이전 문서의 전역 감지 결과를 다시 사용하면 설치되지 않은 face가 선택될 수 있다.
     return null;
   }
+  // A width-only presence probe can also see the platform's LastResort font.
+  // With an authorized catalog available, an unmatched name is unverified;
+  // do not promote that probe to the selected original program.
+  if (!getLocalFontState().stored || getLocalFontState().source === 'local-font-access') return null;
   return detectedOSFontIndex().get(normalizedFamilyKey(fontName)) ?? null;
 }
 
@@ -293,7 +307,26 @@ function pushUniqueFontFamily(families: string[], fontName: string): void {
   families.push(name);
 }
 
-function systemFallbackFamilies(fontName: string): string[] {
+/** 기존 요청·별칭의 순서는 보존하고, 빠진 후보를 다음 공통 후보 앞에 넣는다.
+ * generic 뒤에 누락 후보를 붙이면 브라우저가 그 후보에 도달하지 못할 수 있다.
+ */
+export function completeFontFamilyList(incoming: readonly string[], fallback: readonly string[]): string[] {
+  const families: string[] = [];
+  for (const name of incoming) pushUniqueFontFamily(families, name);
+  const key = (name: string) => name.toLocaleLowerCase('en-US');
+  for (let index = 0; index < fallback.length; index++) {
+    const name = fallback[index].trim();
+    if (!name || families.some(existing => key(existing) === key(name))) continue;
+    const following = fallback.slice(index + 1).find(candidate =>
+      families.some(existing => key(existing) === key(candidate)));
+    const position = following === undefined ? families.length
+      : families.findIndex(existing => key(existing) === key(following));
+    families.splice(position, 0, name);
+  }
+  return families;
+}
+
+function bodyFallbackFamilies(fontName: string): string[] {
   if (GENERIC_FONTS.has(fontName)) return [fontName];
   // KoPub바탕체는 이름에 "바탕체"가 있지만 Windows BatangChe와 달리 비례폭 출판 명조다.
   if (/KoPub\s*바탕(?:체)?|KoPub\s*Batang/i.test(fontName)) {
@@ -309,6 +342,29 @@ function systemFallbackFamilies(fontName: string): string[] {
   }
   // Sans-serif (기본)
   return ['Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Pretendard', 'sans-serif'];
+}
+
+function systemFallbackFamilies(fontName: string): string[] {
+  const body = bodyFallbackFamilies(fontName);
+  if (GENERIC_FONTS.has(fontName)) return body;
+  // 본문 후보 뒤에 공개 문자 기호를 먼저 두어 누락 글자가 컬러 이모지로 바뀌지 않게 한다.
+  // 명시적으로 요청한 이모지 face는 호출자가 앞에 보존한다.
+  const families: string[] = [];
+  for (const name of [...body.slice(0, -1), ...TEXT_SYMBOL_FONT_FAMILIES, 'Segoe UI Emoji', 'Noto Emoji', 'Noto Color Emoji', body.at(-1)!]) {
+    pushUniqueFontFamily(families, name);
+  }
+  return families;
+}
+
+/** 원래 선언은 유지하고, 빠진 글리프를 공급할 일반 텍스트 후보를 같은 순서로 준비·소비한다. */
+export function ordinaryTextFontFamilies(family: string): string[] {
+  const declared = parseCssFontFamilyList(family);
+  if (!declared.length) return [];
+  const families: string[] = [];
+  for (const candidate of [...declared, ...systemFallbackFamilies(declared[0])]) {
+    pushUniqueFontFamily(families, candidate);
+  }
+  return families;
 }
 
 /**
@@ -438,13 +494,15 @@ export function fontFamilyCandidatesForDisplayWithRules(
   const localRecord = options.confirmedLocalFonts === undefined
     ? resolveLocalFont(fontName)
     : null;
+  const installedOriginal = installedFaceName(fontName, options.confirmedLocalFonts);
   const originalAllowed =
     options.includeUnconfirmedOriginal === true ||
     REGISTERED_FONTS.has(fontName) ||
-    confirmedLocalFontSet.has(fontName.toLocaleLowerCase('en-US'));
+    confirmedLocalFontSet.has(fontName.toLocaleLowerCase('en-US')) ||
+    installedOriginal !== null;
 
   if (!localRecord) {
-    const substitute = installedFaceName(fontName, options.confirmedLocalFonts) === null
+    const substitute = installedOriginal === null
       ? installedSubstituteFace(fontName, altType, langId, options.confirmedLocalFonts)
       : null;
     if (substitute) {
@@ -458,7 +516,9 @@ export function fontFamilyCandidatesForDisplayWithRules(
     pushUniqueFontFamily(families, localRecordCssFamily(fontName, localRecord));
     ruleIds.push(FONT_RULE_DISPLAY_CHAIN_POLICY_IDS['style-fallback']);
   } else if (originalAllowed) {
-    pushUniqueFontFamily(families, fontName);
+    // A loaded local program is already the selected face. Do not drop it
+    // merely because it is absent from the bundled web-font catalog.
+    pushUniqueFontFamily(families, installedOriginal ?? fontName);
     ruleIds.push(FONT_RULE_DISPLAY_CHAIN_POLICY_IDS['style-fallback']);
   }
 
@@ -514,4 +574,76 @@ export function fontFamilyCandidatesForDisplayWithRules(
     candidates: families,
     ruleIds: [...new Set(ruleIds.filter(Boolean))],
   };
+}
+
+/**
+ * CSS font 문자열에서 font-family를 추출하여 폰트 치환을 적용한다.
+ *
+ * 입력: 'bold 14.5px "안상수2006가는", sans-serif'
+ * 출력: 'bold 14.5px "돋움", sans-serif'
+ *
+ * [#6600] **들어온 체인을 버리지 않는다.** 엔진(`renderer::canvas_font_family_chain`)이
+ * 이미 설치 face 별칭을 담은 체인을 준다 — `"한양중고딕", "HY중고딕", "HYGothic",
+ * "HYGothic-Medium", "HCR Dotum", "함초롬돋움", 'Malgun Gothic', …` 처럼. 종전에는 첫
+ * 이름만 떼어내 studio 체인으로 **통째로 대체**해서, 그 별칭들이 사라지고 곧바로
+ * `Malgun Gothic` 으로 떨어졌다. Windows DirectWrite 는 `-Medium` 을 스타일 토큰으로
+ * 떼어내 `HY중고딕`·`HYGothic-Medium` 둘 다 해석하지 못하고 `HYGothic` 만 해석하므로
+ * (`src/renderer/mod.rs:1674` 실측 주석), 별칭이 빠지면 `【`·`『` 가 Malgun 의 반각
+ * (0.518em) 글리프로 폴백해 1em 상자 왼쪽에 붙는다.
+ *
+ * 그래서 순서를 이렇게 합친다:
+ *   1. 엔진의 예약 별칭 (공급된 프로그램을 선택하며 문서 글꼴명으로 해석하지 않는다)
+ *   2. studio 문서 치환이 고른 face (`휴먼명조` → `HY신명조` 같은 판정을 보존)
+ *   3. 엔진이 준 체인 그대로 (설치 별칭 → generic 순서가 이미 옳다)
+ *   4. studio 체인의 나머지 (엔진 체인이 없거나 짧을 때의 backstop)
+ */
+export function substituteCssFontFamily(cssFont: string): string {
+  const pxIdx = cssFont.indexOf('px ');
+  if (pxIdx < 0) return cssFont;
+
+  const prefix = cssFont.substring(0, pxIdx + 3);
+  const familyPart = cssFont.substring(pxIdx + 3);
+
+  // #9077: 예약 별칭이 미공급이어도 뒤의 실제 face에 동일한 표시 정책을 적용한다.
+  // 별칭을 원본 이름으로 판정하면 Batang/Malgun Gothic이 실제 face를 선점한다.
+  const reserved: string[] = [];
+  const incoming: string[] = [];
+  for (const name of parseCssFontFamilyList(familyPart)) {
+    if (name.startsWith('__rhwp_ttf__') || name.startsWith('__rhwp_intrinsic__')) {
+      reserved.push(name);
+    } else {
+      incoming.push(name);
+    }
+  }
+  const primary = incoming[0];
+  if (!primary) return cssFont;
+
+  // 같은 원 이름의 언어 슬롯에 다른 대체가 있으면 엔진이 지정한 체인을 따른다.
+  const declaredTargets = documentSubstituteFamilies(primary).filter(target => incoming.includes(target));
+  const studioChain = fontFamilyCandidatesForDisplay(primary, 0, 0,
+    declaredTargets.length ? { documentFallbackFamilies: declaredTargets } : {});
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  const push = (name: string) => {
+    const key = name.toLocaleLowerCase('en-US');
+    if (!name || seen.has(key)) return;
+    seen.add(key);
+    merged.push(name);
+  };
+  for (const alias of reserved) push(alias);
+  if (studioChain[0]) push(studioChain[0]);
+  // 표시 정책이 제외한 원 face를 엔진 체인에서 다시 넣지 않는다. 예를 들어
+  // 휴먼명조 → HY신명조 치환 후 원 face가 남으면, HY신명조가 없는 macOS에서
+  // legacy 휴먼명조를 선택해 한글이 .notdef로 그려지고 뒤의 fallback에 도달하지 않는다.
+  const primaryAllowed = studioChain.some(name =>
+    name.toLocaleLowerCase('en-US') === primary.toLocaleLowerCase('en-US'));
+  const localFontsEnabled = getLocalFontState().stored;
+  for (const name of incoming) {
+    if (name === primary && !primaryAllowed) continue;
+    // 감지 승인이 없으면 엔진의 설치 face 별칭으로 원본 로컬 글꼴이 우회되지 않게 한다.
+    if (!localFontsEnabled && !studioChain.some(candidate =>
+      candidate.toLocaleLowerCase('en-US') === name.toLocaleLowerCase('en-US'))) continue;
+    push(name);
+  }
+  return prefix + formatCssFontFamilyList(completeFontFamilyList(merged, studioChain.slice(1)));
 }

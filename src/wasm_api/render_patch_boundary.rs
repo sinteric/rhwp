@@ -135,6 +135,17 @@ hot_render_boundaries! {
         profile: &str,
     ) -> Result<(), JsValue> = super::render_page_to_canvas_filtered_with_profile_impl;
 
+    // Explicit preview shares the same paint patch generation.
+    #[cfg(target_arch = "wasm32")]
+    exports ["renderPageToCanvasStrictOutlineWithProfile"]
+    fn render_page_to_canvas_strict_outline_with_profile(
+        document: &HwpDocument,
+        page_num: u32,
+        canvas: &HtmlCanvasElement,
+        scale: f64,
+        profile: &str,
+    ) -> Result<String, JsValue> = super::canvas2d_outline_preview::render;
+
     // 타이핑 중 부분 재도색. 같은 페인트 코드를 dirty rect 로만 다시 재생한다. 경계가 없으면
     // 전체 재도색만 새 코드로 그리고 그 뒤 키 입력마다 자기 줄을 옛 코드로 되돌린다 (#4577).
     #[cfg(target_arch = "wasm32")]
@@ -159,6 +170,42 @@ hot_render_boundaries! {
         omit_image_bytes: bool,
         omit_font_bytes: bool,
     ) -> Result<String, JsValue> = super::get_page_layer_tree_with_profile_impl;
+
+    // Opt-in v2 writers and object adapters must build paint and resource tables
+    // in the same patched module, including cache misses after invalidation.
+    #[cfg(target_arch = "wasm32")]
+    exports [
+        "getPageLayerTreeV2Compat", "getPageLayerTreeV2CompatWithProfile",
+        "getPageLayerTreeV2StrictGlyphOutline", "getPageLayerTreeV2StrictGlyphOutlineWithProfile",
+        "getPageLayerTreeV2StrictGlyphRun", "getPageLayerTreeV2StrictGlyphRunWithProfile",
+    ]
+    fn export_text_json(
+        document: &HwpDocument,
+        page: u32,
+        profile: &str,
+        format: super::layer_export::TextExport,
+    ) -> Result<String, JsValue> = super::layer_export::export_text_json_impl;
+
+    #[cfg(target_arch = "wasm32")]
+    exports [
+        "getPageLayerTreeValue", "getPageLayerTreeValueWithProfile",
+        "getPageLayerTreeValueWithProfileAndResourceKeys",
+        "getPageLayerTreeValueV2Compat", "getPageLayerTreeValueV2CompatWithProfile",
+        "getPageLayerTreeValueV2CompatWithProfileAndResourceKeys",
+        "getPageLayerTreeValueV2StrictGlyphOutline", "getPageLayerTreeValueV2StrictGlyphOutlineWithProfile",
+        "getPageLayerTreeValueV2StrictGlyphOutlineWithProfileAndResourceKeys",
+        "getPageLayerTreeValueV2StrictGlyphRun", "getPageLayerTreeValueV2StrictGlyphRunWithProfile",
+        "getPageLayerTreeValueV2StrictGlyphRunWithProfileAndResourceKeys",
+    ]
+    fn export_text_value(
+        document: &HwpDocument,
+        page: u32,
+        profile: &str,
+        format: super::layer_export::TextExport,
+        known_images: JsValue,
+        known_svgs: JsValue,
+        options: crate::paint::LayerJsonOptions,
+    ) -> Result<JsValue, JsValue> = super::layer_export::export_text_value_impl;
 
     // 레이어 평면 분류. `getLayerPlaneSummary` 를 먹여 static flow 분리 여부, overlay 캔버스
     // 생성 여부, **부분 재도색 자격 여부**를 정한다. 여기가 옛 코드면 페인트는 새 코드로
@@ -256,6 +303,18 @@ mod tests {
             .filter(|(export, _)| !hot.contains(export))
             .map(|(export, _)| *export)
             .collect();
+        // All object/v2 exports are adapters over paint and must have the same
+        // patch generation guarantee as the established JSON export.
+        let export_source = include_str!("layer_export.rs");
+        for line in export_source.lines() {
+            if let Some(export) = line.trim().strip_prefix("#[wasm_bindgen(js_name = ") {
+                let export = export.trim_end_matches(")]");
+                assert!(
+                    hot.contains(&export),
+                    "missing object/v2 hot boundary: {export}"
+                );
+            }
+        }
         assert!(
             missing.is_empty(),
             "이 export 들은 PageRenderer 의 렌더 경로에 있는데 핫패치 경계 뒤에 없다 — \

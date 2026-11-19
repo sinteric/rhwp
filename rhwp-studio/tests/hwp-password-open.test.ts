@@ -28,7 +28,7 @@ test('암호 문서는 명시적인 암호 필요 오류에서만 입력 UI로 �
   const openPath = between(mainSource, 'async function loadDocumentForOpen', 'function showLoadErrorUnlessCancelled');
   assert.match(openPath, /wasm\.loadDocument\(data, fileName\)/, '일반 문서 열기를 유지한다');
   assert.match(openPath, /if \(!isPasswordRequiredError\(error\)\) throw error;/, '다른 파싱/DRM/지원 불가 오류는 숨기지 않는다');
-  assert.match(openPath, /await openPasswordProtectedDocument\(data, fileName\);/, '암호 필요일 때만 open command로 전환한다');
+  assert.match(openPath, /await openPasswordProtectedDocument\(data, fileName, openSignal\);/, '암호 필요일 때만 open command로 전환한다');
   assert.match(openPath, /return wasm\.getDocumentInfo\(\);/, '암호 open 성공 뒤 별도 metadata query를 사용한다');
 });
 
@@ -58,7 +58,7 @@ test('암호 입력은 단일 시도에만 쓰고, 취소와 오입력은 영속
 
 test('#6731 암호 open command와 DocumentInfo query는 반환값 경계로 분리된다', () => {
   assert.equal(
-    /async function openPasswordProtectedDocument\(data: Uint8Array, fileName: string\): Promise<void>/.test(
+    /async function openPasswordProtectedDocument\(data: Uint8Array, fileName: string, signal: AbortSignal\): Promise<void>/.test(
       mainSource,
     ),
     true,
@@ -83,7 +83,7 @@ test('#6731 암호 open command와 DocumentInfo query는 반환값 경계로 분
   const openPath = between(mainSource, 'async function loadDocumentForOpen', 'function showLoadErrorUnlessCancelled');
   assert.match(
     openPath,
-    /await openPasswordProtectedDocument\(data, fileName\);\s*return wasm\.getDocumentInfo\(\);/,
+    /await openPasswordProtectedDocument\(data, fileName, openSignal\);\s*return wasm\.getDocumentInfo\(\);/,
     '암호 open 성공 뒤 별도 query로 DocumentInfo를 읽어야 합니다',
   );
 
@@ -161,7 +161,7 @@ test('#6731 DocumentInfo와 폰트 snapshot digest에는 password 운반 필드�
 
 test('WasmBridge는 다음 문서를 모두 준비한 뒤에만 기존 문서를 교체한다', () => {
   const atomic = between(bridgeSource, 'private loadDocumentAtomically', 'loadDocument(data: Uint8Array');
-  assert.match(atomic, /createDocument: \(\) => HwpDocument,\s*\): void/, '원자적 교체 helper도 void command여야 한다');
+  assert.match(atomic, /private loadDocumentAtomically\([\s\S]*?^  \): void/m, '원자적 교체 helper도 void command여야 한다');
   assert.doesNotMatch(atomic, /getDocumentInfo\(\)|return\s+info/, '교체 command 안에서 metadata query 결과를 만들거나 반환하지 않는다');
   assert.doesNotMatch(atomic, /this\.releaseDocument\(\)/, '실패 전에 현재 문서를 해제하지 않는다');
   assert.match(atomic, /requiresPasswordForSave: boolean/, '다음 문서의 보호 의도를 명시적으로 받는다');

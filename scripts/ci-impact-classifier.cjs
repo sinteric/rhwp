@@ -2,8 +2,8 @@
 
 const fs = require('node:fs');
 
-const CLASSIFIER_VERSION = '7';
-const CODEQL_LANGUAGE_ORDER = ['javascript-typescript', 'python', 'rust'];
+const CLASSIFIER_VERSION = '9';
+const CODEQL_LANGUAGE_ORDER = ['javascript-typescript', 'python', 'rust', 'actions'];
 const FRONTEND_MODE_RANK = { none: 0, unit: 1, package: 2 };
 
 const REVIEW_REFERENCE_PDF_PREFIXES = ['pdf/'];
@@ -34,6 +34,24 @@ const NATIVE_SKIA_RUST_FILES = new Set([
   // [#5776] Native Skia job의 cli_exit_codes_native가 export-png를 직접 실행한다.
   // Render Diff는 현재 raster adapter를 소비하지 않으므로 Canvas 축은 켜지 않는다.
   'src/cli/outputs/raster.rs',
+  // Sixel consumes the same Native Skia pixels; Canvas does not consume this adapter.
+  'src/cli/outputs/sixel.rs',
+  'src/cli/outputs/kitty.rs',
+  'src/native_host/region_cache.rs',
+  'tests/cases/issue_8150_kitty_contract.rs',
+  'tests/cases/issue_7820_sixel_contract.rs',
+  'tests/cases/issue_4961_font_decision_trace.rs',
+  'tests/cases/issue_7902_original_frame_and_content.rs',
+  'tests/cases/issue_8160_hwp2022_paragraph_relations.rs',
+  'tests/cases/issue_7950_pdf_paint.rs',
+  'tests/cases/issue_536_native_region_cache.rs',
+  'tests/cases/native_fractional_glyph_origin.rs',
+  'tests/cases/skia_native_glyph_replay.rs',
+  'tests/cases/issue_8153_opaque_mixed_axis_image_sampling.rs',
+  'tests/cases/issue_8153_print_glyph_geometry.rs',
+  'tests/cases/issue_8153_symbol_fallback.rs',
+  'tests/cases/skia_region_plan.rs',
+  'tests/cases/skia_host_surface.rs',
   'tests/cli_exit_codes_native.rs',
   'tests/issue_1144_native.rs',
   'tests/issue_2083_hide_fill_page_background.rs',
@@ -64,6 +82,8 @@ const RUST_TEST_FONT_EXTENSIONS = [
 
 const RENDER_TOOL_PATHS = new Set([
   'scripts/renderer_baseline.py',
+  'scripts/measure_render_diff_wasm.py',
+  'scripts/wasm-pack-locked.sh',
   'scripts/renderer_baseline_manifest.json',
   'scripts/generate_font_glyph_payload_fixture.py',
   'scripts/generate_exact_face_collection_fixture.py',
@@ -89,6 +109,7 @@ function fullResult(reason) {
   return {
     rust_required: 'true',
     frontend_mode: 'package',
+    frontend_canvas_required: 'true',
     render_required: 'true',
     native_skia_required: 'true',
     codeql_languages: CODEQL_LANGUAGE_ORDER.join(','),
@@ -181,7 +202,8 @@ function failClosedPathReason(filename) {
     return 'wasm-contract';
   }
   if (
-    filename === 'scripts/ci-impact-classifier.cjs'
+    filename === 'scripts/frontend-canvas-gates.mjs'
+    || filename === 'scripts/ci-impact-classifier.cjs'
     || filename === 'scripts/tests/test_ci_impact_workflow.py'
     || filename === 'scripts/tests/ci-impact-classifier.test.cjs'
     || filename.startsWith('scripts/tests/fixtures/ci-impact-classifier-')
@@ -241,6 +263,18 @@ function isStudioPackageSource(filename) {
   );
 }
 
+// Browser-owned inputs do not change the Native PDF exporter. Keep public assets,
+// package/build configuration and unknown paths on the existing full Render Diff.
+function isStudioCanvasSource(filename) {
+  return [
+    'core', 'embed', 'view', 'ui', 'styles', 'engine', 'ai', 'i18n', 'compare',
+    'dev', 'recovery', 'automation', 'plugin', 'document-agent', 'recent', 'history',
+  ].some(directory => filename.startsWith(`rhwp-studio/src/${directory}/`))
+    || filename === 'rhwp-studio/src/main.ts'
+    || filename === 'rhwp-studio/src/style.css'
+    || filename === 'rhwp-studio/e2e/canvas-font-alias-issue9077.test.mjs';
+}
+
 function classifyChanges(input = {}) {
   const eventName = String(input.eventName || 'pull_request');
   const forceFullReason = String(input.forceFullReason || '');
@@ -277,6 +311,7 @@ function classifyChanges(input = {}) {
 
   let rustRequired = false;
   let frontendMode = 'none';
+  let frontendCanvasRequired = false;
   let renderRequired = false;
   let nativeSkiaRequired = false;
   let reviewOnlyCount = 0;
@@ -347,12 +382,6 @@ function classifyChanges(input = {}) {
       continue;
     }
 
-    if (isStudioPackageSource(filename)) {
-      requireFrontend('package', 'studio-render-package');
-      renderRequired = true;
-      continue;
-    }
-
     if (isStudioKnownNonRenderSource(filename)) {
       // [#6330] command 층과 히스토리 코어(engine/command.ts)는 스냅샷 진입점이
       // 밀집한 undo 경로다 — undo depth 게이트(#5769)는 frontend-package-gates
@@ -362,6 +391,18 @@ function classifyChanges(input = {}) {
       // 함께 승격되지만, 목록을 파일 단위로 좁히면 신규 command 파일이 아래
       // rhwp-studio/ catch-all(render_required 동반)로 떨어져 더 비싸진다.
       requireFrontend('package', 'studio-undo-package');
+      continue;
+    }
+
+    if (isStudioCanvasSource(filename)) {
+      requireFrontend('package', 'studio-canvas-package');
+      frontendCanvasRequired = true;
+      continue;
+    }
+
+    if (isStudioPackageSource(filename)) {
+      requireFrontend('package', 'studio-render-package');
+      renderRequired = true;
       continue;
     }
 
@@ -422,6 +463,7 @@ function classifyChanges(input = {}) {
   return {
     rust_required: rustRequired ? 'true' : 'false',
     frontend_mode: frontendMode,
+    frontend_canvas_required: frontendCanvasRequired ? 'true' : 'false',
     render_required: renderRequired ? 'true' : 'false',
     native_skia_required: nativeSkiaRequired ? 'true' : 'false',
     codeql_languages: CODEQL_LANGUAGE_ORDER

@@ -39,8 +39,27 @@ fn hancom_single_odd_master_flag_is_not_parsed_as_both() {
         master_page_apply_to(0x8008_0000, 1, 0),
         Some(HeaderFooterApply::Odd)
     );
-    assert_eq!(master_page_apply_to(0x2008_0000, 1, 0), None);
-    assert_eq!(master_page_apply_to(0xc008_0000, 2, 0), None);
+    // 한컴 12.30 저장본: bit 29·30·31이 양 쪽·짝수 쪽·홀수 쪽이고 목록은 그 차례다
+    // (짝수 쪽+홀수 쪽 0xc0000000은 짝수 쪽 목록이 먼저, 셋 0xe0000000은 양 쪽·짝수 쪽·홀수 쪽).
+    assert_eq!(
+        master_page_apply_to(0x2008_0000, 1, 0),
+        Some(HeaderFooterApply::Both)
+    );
+    assert_eq!(
+        master_page_apply_to(0xc008_0000, 2, 0),
+        Some(HeaderFooterApply::Even)
+    );
+    assert_eq!(
+        master_page_apply_to(0xc008_0000, 2, 1),
+        Some(HeaderFooterApply::Odd)
+    );
+    assert_eq!(
+        master_page_apply_to(0xe008_0000, 3, 1),
+        Some(HeaderFooterApply::Even)
+    );
+    // 비트 수와 목록 수가 다르면 목록 차례로 정한다.
+    assert_eq!(master_page_apply_to(0x2008_0000, 2, 0), None);
+    assert_eq!(master_page_apply_to(0x0008_0000, 1, 0), None);
 }
 
 #[test]
@@ -1011,6 +1030,7 @@ fn orphan_field_end_links_to_the_open_field_id() {
             begin_id_ref: 0,
             field_id: 0,
             begin_ctrl_id: 0,
+            memo_index: 0,
         }],
         ..Default::default()
     };
@@ -1050,6 +1070,7 @@ fn field_closed_in_its_own_paragraph_is_not_left_open() {
             begin_id_ref: 0,
             field_id: 0,
             begin_ctrl_id: 0,
+            memo_index: 0,
         }],
         ..Default::default()
     };
@@ -1082,6 +1103,8 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
     let mut title_marks: Vec<TitleMark> = Vec::new();
     let mut orphan_field_ends: Vec<OrphanFieldEnd> = Vec::new();
     let mut nb_space_control = false;
+    let mut literal_figure_spaces = Vec::new();
+    let mut nb_space_control_indices = Vec::new();
     let mut pos = 0;
     // 확장 컨트롤(extended) 카운터 → controls[] 인덱스와 1:1 대응
     let mut ctrl_idx: usize = 0;
@@ -1164,6 +1187,7 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
                         begin_id_ref: 0,
                         field_id: 0,
                         begin_ctrl_id: 0,
+                        memo_index: 0,
                     });
                 }
             } else if is_extended_only_ctrl_char(ch) {
@@ -1196,7 +1220,7 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
                 }
             }
             // 자동번호(0x12) / 새번호(0x12): 텍스트에 공백 placeholder 추가
-            // → apply_auto_numbers_to_composed에서 "  " (연속 2공백)으로 번호 삽입
+            // → 렌더러가 이 자리표 글자의 표시 문자열로 번호를 투영한다
             if ch == 0x0012 {
                 char_offsets.push(code_unit_pos);
                 text.push(' ');
@@ -1224,6 +1248,7 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
                 }
                 0x001E => {
                     char_offsets.push(code_unit_pos);
+                    nb_space_control_indices.push(char_count);
                     text.push('\u{00A0}'); // 묶음 빈칸 (HWP 5.0 표 7: 코드 30, NO-BREAK SPACE)
                     char_count += 1;
                     // [#5174] 제품 경로와 같이 표기 출처를 남긴다.
@@ -1255,6 +1280,9 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
             // [#6873] 짝을 잃은 서로게이트는 버리지 않고 `□` 로 받는다 — 본 구현과 같다.
             let scalar = char::from_u32(ch as u32).or(Some(super::UNPAIRED_SURROGATE_CHAR));
             if let Some(c) = scalar {
+                if c == '\u{2007}' {
+                    literal_figure_spaces.push(char_count);
+                }
                 char_offsets.push(code_unit_pos);
                 text.push(c);
                 char_count += 1;
@@ -1265,12 +1293,14 @@ fn parse_para_text_reference(data: &[u8]) -> ParaTextParts {
 
     ParaTextParts {
         text,
+        literal_figure_spaces,
         char_offsets,
         field_ranges,
         tab_extended,
         title_marks,
         orphan_field_ends,
         nb_space_control,
+        nb_space_control_indices,
     }
 }
 
@@ -1303,8 +1333,18 @@ fn assert_decode_identical(data: &[u8]) {
     let reference = parse_para_text_reference(data);
     assert_eq!(new.text, reference.text, "text 불일치: {:02x?}", data);
     assert_eq!(
+        new.literal_figure_spaces, reference.literal_figure_spaces,
+        "리터럴 FIGURE SPACE 출처 불일치: {:02x?}",
+        data
+    );
+    assert_eq!(
         new.char_offsets, reference.char_offsets,
         "offsets 불일치: {:02x?}",
+        data
+    );
+    assert_eq!(
+        new.nb_space_control_indices, reference.nb_space_control_indices,
+        "묶음 빈칸 출처 불일치: {:02x?}",
         data
     );
     let fr_new: Vec<_> = new.field_ranges.iter().map(field_range_key).collect();

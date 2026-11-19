@@ -92,6 +92,19 @@ pub(crate) fn is_real_strike_shape(shape: &str) -> bool {
 ///
 /// 본 함수는 헤더 root element 만 읽고 즉시 반환하므로 비용이 매우 낮다.
 pub fn parse_hwpx_hwpml_version(xml: &str) -> Option<String> {
+    parse_hwpx_head_attr(xml, b"version")
+}
+
+/// header.xml `<hh:head secCnt="N">` 가 선언한 구역 수.
+///
+/// 한/글은 패키지 spine 이 더 많은 구역 파일을 나열해도 이 값만큼의 앞 구역만
+/// 읽는다(hwpx-02 대조 실험: secCnt 1→2 만 바꾸면 5→6쪽, container.rdf 에
+/// section1 을 추가해도 secCnt=1 이면 5쪽). 속성이 없거나 정수가 아니면 `None`.
+pub fn parse_hwpx_declared_section_count(xml: &str) -> Option<usize> {
+    parse_hwpx_head_attr(xml, b"secCnt")?.trim().parse().ok()
+}
+
+fn parse_hwpx_head_attr(xml: &str, key: &[u8]) -> Option<String> {
     let mut reader = Reader::from_str(xml);
     let mut buf = Vec::new();
     loop {
@@ -100,7 +113,7 @@ pub fn parse_hwpx_hwpml_version(xml: &str) -> Option<String> {
                 let name = e.name();
                 if local_name(name.as_ref()) == b"head" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref().as_bytes() == b"version" {
+                        if attr.key.as_ref().as_bytes() == key {
                             return Some(attr_str(&attr));
                         }
                     }
@@ -186,6 +199,7 @@ pub(super) fn parse_hwpx_header_with_plain_margin_units(
                     b"linkinfo" => {
                         parse_doc_option_linkinfo(e, &mut doc_info);
                     }
+                    b"trackchageConfig" => parse_track_change_config(e, &mut doc_info),
                     // [Task #1058 후속] BULLET 누락 시 한컴이 default 글머리표를 본문
                     // paragraph 에 자동 부여. HWPX `<hh:bullet id="N" char="❏" useImage="0">`
                     // 4개 → HWP BULLET record 4개. 누락 시 일반 문단 시작 글머리표 부작용.
@@ -223,6 +237,7 @@ pub(super) fn parse_hwpx_header_with_plain_margin_units(
                     b"linkinfo" => {
                         parse_doc_option_linkinfo(e, &mut doc_info);
                     }
+                    b"trackchageConfig" => parse_track_change_config(e, &mut doc_info),
                     _ => {}
                 }
             }
@@ -345,41 +360,61 @@ fn parse_doc_option_linkinfo(e: &quick_xml::events::BytesStart, doc_info: &mut D
     });
 }
 
+/// `<hh:trackchageConfig flags>` 를 HWP5 `HWPTAG_TRACKCHANGE` 첫 `u32` 에 싣는다.
+///
+/// 레코드는 `parse_doc_option_linkinfo` 가 한컴 기본값(56)으로 먼저 만든다 — 헤더에서
+/// `docOption` 이 `trackchageConfig` 앞에 온다. 한글 2024 는 HWPX 를 HWP 로 저장할 때 이
+/// 값을 그대로 옮긴다(exam_social 의 flags 를 0·1·2·4·8·16·24·32·40·48·56·64 로 바꿔
+/// 저장한 레코드가 모두 같은 값). 종전에는 56 을 고정해 `flags="0"` 문서가 HWP 저장에서
+/// 56 으로 바뀌었다.
+fn parse_track_change_config(e: &quick_xml::events::BytesStart, doc_info: &mut DocInfo) {
+    let Some(flags) = e
+        .attributes()
+        .flatten()
+        .find(|attr| attr.key.as_ref().as_bytes() == b"flags")
+        .map(|attr| parse_u32(&attr))
+    else {
+        return;
+    };
+    if let Some(record) = doc_info
+        .extra_records
+        .iter_mut()
+        .find(|r| r.tag_id == tags::HWPTAG_TRACKCHANGE)
+    {
+        if record.data.len() >= 4 {
+            record.data[..4].copy_from_slice(&flags.to_le_bytes());
+        }
+    }
+}
+
 fn parse_memo_shape(e: &quick_xml::events::BytesStart, doc_info: &mut DocInfo) {
-    let mut width = 0u32;
-    let mut line_width = 0u8;
-    let mut line_type = 0u8;
-    let mut line_color = 0u32;
-    let mut fill_color = 0u32;
-    let mut active_color = 0u32;
-    let mut memo_type = 0u32;
+    use crate::model::memo_shape::MemoShape;
+    let mut shape = MemoShape {
+        width: 0,
+        line_type: 0,
+        line_width: 0,
+        line_color: 0,
+        fill_color: 0,
+        active_color: 0,
+        memo_type: 0,
+    };
 
     for attr in e.attributes().flatten() {
         match attr.key.as_ref().as_bytes() {
-            b"width" => width = parse_u32(&attr),
-            b"lineWidth" => line_width = parse_u8(&attr),
-            b"lineType" => line_type = parse_memo_line_type(&attr_str(&attr)),
-            b"lineColor" => line_color = parse_color(&attr),
-            b"fillColor" => fill_color = parse_color(&attr),
-            b"activeColor" => active_color = parse_color(&attr),
-            b"memoType" => memo_type = parse_memo_type(&attr_str(&attr)),
+            b"width" => shape.width = parse_u32(&attr),
+            b"lineWidth" => shape.line_width = parse_u8(&attr),
+            b"lineType" => shape.line_type = parse_memo_line_type(&attr_str(&attr)),
+            b"lineColor" => shape.line_color = parse_color(&attr),
+            b"fillColor" => shape.fill_color = parse_color(&attr),
+            b"activeColor" => shape.active_color = parse_color(&attr),
             _ => {}
         }
     }
 
-    let mut data = Vec::with_capacity(22);
-    data.extend_from_slice(&width.to_le_bytes());
-    data.push(line_type);
-    data.push(line_width);
-    data.extend_from_slice(&line_color.to_le_bytes());
-    data.extend_from_slice(&fill_color.to_le_bytes());
-    data.extend_from_slice(&active_color.to_le_bytes());
-    data.extend_from_slice(&memo_type.to_le_bytes());
-
     doc_info.extra_records.push(RawRecord {
         tag_id: tags::HWPTAG_MEMO_SHAPE,
         level: 1,
-        data,
+        data: shape.to_record(),
     });
     doc_info.memo_shape_count = doc_info
         .extra_records
@@ -388,32 +423,10 @@ fn parse_memo_shape(e: &quick_xml::events::BytesStart, doc_info: &mut DocInfo) {
         .count() as u32;
 }
 
+/// HWPX memoPr `lineType`의 HWP5 MEMO_SHAPE 값. OWPML 이름의 차례가 HWP 값이다
+/// (0 NONE, 1 SOLID, 2 DOT, 3 DASH …, 한컴 12.30 저장본으로 확인, `model::memo_shape`).
 fn parse_memo_line_type(value: &str) -> u8 {
-    match value {
-        // HWPX memoPr lineType uses the OWPML name, but HWP5 MEMO_SHAPE stores
-        // the Hancom memo line enum where 0 means "no/unknown" and SOLID is 1.
-        "SOLID" => 1,
-        "DOT" => 13,
-        "DASH_DOT" => 2,
-        "DASH" => 3,
-        "DASH_DOT_DOT" => 4,
-        "LONG_DASH" => 5,
-        "CIRCLE" => 6,
-        "DOUBLE_SLIM" => 7,
-        "SLIM_THICK" => 8,
-        "THICK_SLIM" => 9,
-        "SLIM_THICK_SLIM" => 10,
-        "WAVE" => 11,
-        "DOUBLE_WAVE" => 12,
-        _ => 0,
-    }
-}
-
-fn parse_memo_type(value: &str) -> u32 {
-    match value {
-        "NOMAL" | "NORMAL" | "" => 0,
-        _ => 0,
-    }
+    crate::model::memo_shape::line_type_from_name(value)
 }
 
 // ─── beginNum ───
@@ -933,12 +946,15 @@ fn parse_para_shape(
         }
     }
 
+    let mut plain_line_spacing = false;
     if !is_empty_event(e) {
         let mut buf = Vec::new();
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Empty(ref ce)) => {
-                    parse_para_shape_child(ce, &mut ps);
+                    if parse_para_shape_child(ce, &mut ps) == ParaShapeChildKind::LineSpacing {
+                        plain_line_spacing = true;
+                    }
                 }
                 Ok(Event::Start(ref ce)) => {
                     match parse_para_shape_child(ce, &mut ps) {
@@ -954,6 +970,7 @@ fn parse_para_shape(
                             // HwpUnitChar case를 우선 적용, 없으면 default 사용
                             parse_para_shape_switch(reader, &mut ps, physical_plain_margin)?;
                         }
+                        ParaShapeChildKind::LineSpacing => plain_line_spacing = true,
                         ParaShapeChildKind::Other => {}
                     }
                 }
@@ -969,6 +986,17 @@ fn parse_para_shape(
             }
             buf.clear();
         }
+    }
+
+    // switch 밖 평문 `<hh:lineSpacing>` 의 고정·최소·여백 값은 평문 여백과 같은 단위 계약을 따른다.
+    // 패키지 xmlVersion 1.4 이상은 물리 HWPUNIT 이라 공통 IR(2× 스케일)로 올리고, 이전 판본은
+    // 저장 IR 값 그대로다. 웹한글기안기 인쇄 실측: 고정 2000 은 1.4 에서 20pt, 1.2 에서 10pt,
+    // 여백 500 은 1.4 에서 5pt, 1.2 에서 2.5pt 를 띄운다(HWP5 저장값 4000 → 20pt 와 같은 IR).
+    if plain_line_spacing
+        && physical_plain_margin
+        && ps.line_spacing_type != LineSpacingType::Percent
+    {
+        ps.line_spacing = ps.line_spacing.saturating_mul(2);
     }
 
     // [Task #1058 후속] line_spacing_v2 (UINT32, 5.0.2.5 이상) 보정.
@@ -997,6 +1025,7 @@ fn parse_para_shape(
 enum ParaShapeChildKind {
     Margin,
     Switch,
+    LineSpacing,
     Other,
 }
 
@@ -1065,7 +1094,7 @@ fn parse_para_shape_child(
                     _ => {}
                 }
             }
-            ParaShapeChildKind::Other
+            ParaShapeChildKind::LineSpacing
         }
         b"border" => {
             for attr in ce.attributes().flatten() {
@@ -1207,6 +1236,16 @@ fn parse_para_shape_margin_value_child(ce: &quick_xml::events::BytesStart, ps: &
     if !matches!(local, b"intent" | b"left" | b"right" | b"prev" | b"next") {
         return;
     }
+    // 여백 값 요소는 core 네임스페이스(`hc:`)다. 한/글은 다른 접두어로 쓴 요소를 읽지
+    // 않는다 — 옛 rhwp 저장본 `samples/hwpx/hwpx-02.hwpx` 는 `<hh:intent>` 로
+    // 썼고, 한/글 2022 PDF 는 그 내어쓰기(-5184)를 적용하지 않는다(2쪽 `39.2억` 줄 x
+    // 113.44 = 본문 왼쪽). 같은 파일의 접두어만 `hc:` 로 바꾸면 한/글이 148.00 으로
+    // 내어 쓴다(engine 2020 대조 실험). 접두어가 없는 요소는 종전대로 읽는다.
+    if let Some(prefix) = cname.prefix() {
+        if prefix.into_inner() != "hc" {
+            return;
+        }
+    }
 
     // 패키지 xmlVersion 1.4 이상에서만 평문 HWPUNIT은 물리 단위다.
     // 이전 버전은 한컴 HWP 저장본과 같은 IR 값이므로 확대하지 않는다.
@@ -1222,7 +1261,8 @@ fn parse_para_shape_margin_value_child(ce: &quick_xml::events::BytesStart, ps: &
         let raw = parse_i32(&attr);
         let value = match unit.as_deref() {
             Some("HWPUNIT") if ps.hwpx_plain_para_margin_physical => raw.saturating_mul(2),
-            // CHAR는 반 단위가 남는 홀수 IR 값의 보존 표기다.
+            // IR 하위 비트는 CHAR/HWPUNIT 단위 선택을 보존한다.
+            // CHAR의 물리 값은 렌더러가 문서 기본 스타일의 em으로 해소한다.
             Some("CHAR") if ps.hwpx_plain_para_margin_physical => {
                 raw.saturating_mul(2).saturating_add(1)
             }
@@ -1264,6 +1304,9 @@ fn parse_para_shape_margin_children(
     Ok(())
 }
 
+/// 한/글이 8~10수준 문단 머리를 담는 `<hp:case>` 의 required-namespace.
+pub(crate) const HWPML_2016_PARAGRAPH_NS: &str = "http://www.hancom.co.kr/hwpml/2016/paragraph";
+
 /// `<switch>` 내부의 `<case>`/`<default>` 분기에서 margin, lineSpacing을 파싱.
 /// HwpUnitChar 네임스페이스 case를 우선 적용한다.
 fn parse_para_shape_switch(
@@ -1273,8 +1316,11 @@ fn parse_para_shape_switch(
 ) -> Result<(), HwpxError> {
     let mut buf = Vec::new();
     let mut in_hwpunitchar_case = false;
+    let mut in_paragraph_case = false;
     let mut in_default = false;
     let mut found_case = false;
+    // 한/글은 8~10수준 문단 머리를 2016 문단 네임스페이스 case 에만 두고 default 는 머리 없음이다.
+    let mut found_heading_case = false;
     // default 값을 임시 저장 (case가 없을 때 폴백)
     let mut def_margin_left: Option<i32> = None;
     let mut def_margin_right: Option<i32> = None;
@@ -1306,6 +1352,10 @@ fn parse_para_shape_switch(
                         if is_hwpunitchar {
                             in_hwpunitchar_case = true;
                         }
+                        in_paragraph_case = ce
+                            .attributes()
+                            .flatten()
+                            .any(|attr| attr_str(&attr) == HWPML_2016_PARAGRAPH_NS);
                     }
                     b"default" => {
                         in_default = true;
@@ -1316,15 +1366,20 @@ fn parse_para_shape_switch(
             Ok(Event::Empty(ref ce)) => {
                 let cname = ce.name();
                 let local = local_name(cname.as_ref());
+                if local == b"heading" && (in_paragraph_case || (in_default && !found_heading_case))
+                {
+                    parse_para_shape_child(ce, ps);
+                    found_heading_case |= in_paragraph_case;
+                }
                 if in_hwpunitchar_case || in_default {
                     match local {
                         b"margin" | b"intent" | b"left" | b"right" | b"prev" | b"next" => {
                             // margin 하위 요소들: <left value="..." />, <prev value="..." /> 등
                             let tag_name = local;
-                            // [#6875] HwpUnitChar `case` 의 `unit="CHAR"` 는 저장값이
-                            // **홀수**여서 절반이 정수로 안 떨어진다는 표시다. 그 자리를
-                            // 무시하면 왕복에서 최하위 비트가 사라지고 한/글이 문단 간격을
-                            // 작게 잡는다(07939: 558 → 545쪽). `value` 보다 먼저 읽는다.
+                            // [#6875] HwpUnitChar case의 CHAR는 IR 하위 비트1이다.
+                            // 이는 소수 정밀도가 아니라 기본 스타일 em에 대한 상대 단위다.
+                            // 비트를 잃으면 왕복 뒤 절대 HWPUNIT 간격으로 바뀐다
+                            // (07939: 558 → 545쪽). `value`보다 먼저 읽어 보존한다.
                             let char_unit = ce.attributes().flatten().any(|attr| {
                                 attr.key.as_ref().as_bytes() == b"unit"
                                     && attr.value.as_ref() == "CHAR"
@@ -1432,6 +1487,7 @@ fn parse_para_shape_switch(
                 match local {
                     b"case" => {
                         in_hwpunitchar_case = false;
+                        in_paragraph_case = false;
                     }
                     b"default" => {
                         in_default = false;
@@ -1601,6 +1657,9 @@ fn parse_border_fill(
                     bf.attr |= 1 << 13;
                 }
             }
+            b"breakCellSeparateLine" => {
+                bf.break_cell_separate_line = parse_bool(&attr);
+            }
             // [#2973] 필드와 함께 attr bit0(표 24 3D 효과)도 동기화한다 — 방출측
             // (#2965)이 attr 비트에서 읽으므로, centerLine(bit13)과 같은 패턴.
             b"threeD" => {
@@ -1683,10 +1742,10 @@ fn parse_border_fill(
                             for attr in ce.attributes().flatten() {
                                 match attr.key.as_ref().as_bytes() {
                                     b"faceColor" => {
-                                        if attr_str(&attr).eq_ignore_ascii_case("none") {
-                                            face_is_none = true;
-                                        }
                                         solid.background_color = parse_color(&attr);
+                                        // 한글 2018은 같은 색 없음 값을 #FFFFFFFF로 저장한다.
+                                        face_is_none = solid.background_color == 0xffff_ffff
+                                            || attr_str(&attr).eq_ignore_ascii_case("none");
                                     }
                                     b"hatchColor" => solid.pattern_color = parse_color(&attr),
                                     b"hatchStyle" => {
@@ -2042,6 +2101,7 @@ fn parse_bullet_hwpx(
     xml: &str,
 ) -> Result<Bullet, HwpxError> {
     let mut bullet = Bullet::default();
+    let mut has_image_ref = false;
 
     for attr in e.attributes().flatten() {
         match attr.key.as_ref().as_bytes() {
@@ -2076,7 +2136,7 @@ fn parse_bullet_hwpx(
     // numbering.raw_para_heads(#2695 계열)와 같은 방식으로 원본 구간을 통째로 보존해
     // 직렬화 시 splice 한다(무손실 라운드트립).
     // <hh:img binaryItemIDRef="imageN"> 는 이미지 글머리표의 실제 BinData 참조 ID —
-    // useImage="1" 만으로는 어떤 이미지인지 알 수 없어 누락 시 항상 ID 1 로 고정된다.
+    // useImage="1" 만으로는 이미지 ID를 알 수 없으므로 참조 누락 시 문자를 사용한다.
     if !is_empty_event(e) {
         let inner_start = reader.buffer_position() as usize;
         let mut inner_end = inner_start;
@@ -2087,6 +2147,26 @@ fn parse_bullet_hwpx(
                 Ok(Event::Start(ref ce)) | Ok(Event::Empty(ref ce))
                     if local_name(ce.name().as_ref()) == b"img" =>
                 {
+                    for attr in ce.attributes().flatten() {
+                        let value = attr.value.as_ref();
+                        match attr.key.as_ref().as_bytes() {
+                            b"contrast" => {
+                                bullet.image_data[0] = value.parse::<i8>().unwrap_or(0) as u8
+                            }
+                            b"bright" => {
+                                bullet.image_data[1] = value.parse::<i8>().unwrap_or(0) as u8
+                            }
+                            b"effect" => {
+                                bullet.image_data[2] = match value {
+                                    "GRAY_SCALE" => 1,
+                                    "BLACK_WHITE" => 2,
+                                    "PATTERN_8_8" => 3,
+                                    _ => 0,
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     if let Some(attr) = ce
                         .attributes()
                         .flatten()
@@ -2095,7 +2175,10 @@ fn parse_bullet_hwpx(
                         let s = attr.value.as_ref().to_owned();
                         let num: String = s.chars().filter(|c| c.is_ascii_digit()).collect();
                         if let Ok(id) = num.parse::<i32>() {
-                            bullet.image_bullet = id;
+                            if id > 0 {
+                                bullet.image_bullet = id;
+                                has_image_ref = true;
+                            }
                         }
                     }
                 }
@@ -2130,6 +2213,12 @@ fn parse_bullet_hwpx(
         }
     }
 
+    // 실제 참조가 없는 이미지 사용 표시는 다른 BinData를 가리키지 않는다.
+    // 한컴은 이 경우 원본 글머리표 문자를 사용한다. 원래 속성은 저장 시 보존한다.
+    if bullet.image_bullet > 0 && !has_image_ref {
+        bullet.image_bullet = 0;
+        bullet.hwpx_image_without_ref = true;
+    }
     Ok(bullet)
 }
 
@@ -2255,7 +2344,7 @@ fn parse_numbering_para_head_attrs(
             b"text" => format_str = attr_str(&attr),
             b"numFormat" => {
                 head.number_format = parse_numbering_format_code(&attr_str(&attr));
-                head.attr = (head.attr & !(0x0f << 5)) | ((head.number_format as u32) << 5);
+                head.attr = (head.attr & !(0x1f << 5)) | ((head.number_format as u32) << 5);
             }
             b"charPrIDRef" => head.char_shape_id = parse_u32(&attr),
             b"widthAdjust" => head.width_adjust = parse_i16(&attr),
@@ -2279,6 +2368,10 @@ fn read_numbering_para_head_text(reader: &mut Reader<&[u8]>) -> Result<String, H
             Ok(Event::CData(ref t)) => {
                 text.push_str(t.as_ref());
             }
+            // 번호 서식의 &·<·>는 글자 참조로 따로 온다. 버리면 다시 열 때 빠진다.
+            Ok(Event::GeneralRef(ref r)) => {
+                text.push_str(&super::section::decode_xml_general_ref(r));
+            }
             Ok(Event::End(ref ee)) => {
                 if local_name(ee.name().as_ref()) == b"paraHead" {
                     break;
@@ -2301,7 +2394,7 @@ fn apply_numbering_para_head(
     start: Option<u32>,
     format_str: String,
 ) {
-    if !(1..=7).contains(&level) {
+    if !(1..=crate::model::style::NUMBERING_LEVELS).contains(&level) {
         return;
     }
 
@@ -2313,7 +2406,7 @@ fn apply_numbering_para_head(
     num.level_formats[idx] = format_str;
 }
 
-fn parse_numbering_format_code(value: &str) -> u8 {
+pub(crate) fn parse_numbering_format_code(value: &str) -> u8 {
     // 코드 값은 한글문서파일형식 5.0 rev1.3 "표 41: 문단 번호 형식"과 OWPML
     // Core XML schema.xml 의 NumberType1 enumeration 순서가 1:1 대응한다
     // (mydocs/tech/한글문서파일형식_5.0_revision1.3.md:978-993). 이전 구현은
@@ -2340,6 +2433,12 @@ fn parse_numbering_format_code(value: &str) -> u8 {
         "HANGUL_PHONETIC" | "HANGUL_NUMBER" => 12,
         "IDEOGRAPH" | "HANJA_NUMBER" => 13,
         "CIRCLED_IDEOGRAPH" => 14,
+        // 한/글은 갑·을·병을 DECAGON_CIRCLE, 甲·乙·丙을 DECAGON_CIRCLE_HANJA로 쓴다.
+        "DECAGON_CIRCLE" => 15,
+        "DECAGON_CIRCLE_HANJA" => 16,
+        // 각주·쪽 번호의 4가지 기호(*, †, ‡, §)와 사용자 기호(표 134 0x80·0x81)
+        "SYMBOL" => 0x80,
+        "USER_CHAR" => 0x81,
         _ => value.parse().unwrap_or(0),
     }
 }
@@ -2405,7 +2504,7 @@ fn parse_border_line_type(attr: &quick_xml::events::attributes::Attribute) -> Bo
     }
 }
 
-fn parse_border_line_type_code(attr: &quick_xml::events::attributes::Attribute) -> u8 {
+pub(super) fn parse_border_line_type_code(attr: &quick_xml::events::attributes::Attribute) -> u8 {
     match parse_border_line_type(attr) {
         BorderLineType::None => 0,
         BorderLineType::Solid => 1,
@@ -3374,30 +3473,33 @@ mod tests {
   </hh:refList>
 </hh:head>"##;
 
-        let (doc_info, _) = parse_hwpx_header(xml).unwrap();
-        let bf = &doc_info.border_fills[0];
+        for color in ["none", "#FFFFFFFF", "#ffffffff"] {
+            let xml = xml.replace("faceColor=\"none\"", &format!("faceColor=\"{color}\""));
+            let (doc_info, _) = parse_hwpx_header(&xml).unwrap();
+            let bf = &doc_info.border_fills[0];
 
-        // 렌더는 빈 채우기.
-        assert_eq!(
-            bf.fill.fill_type,
-            FillType::None,
-            "빈 winBrush 는 렌더상 채움 없음"
-        );
-        // 직렬화 복원을 위해 solid 데이터는 보존.
-        let solid = bf
-            .fill
-            .solid
-            .as_ref()
-            .expect("winBrush solid 데이터 보존 필요");
-        assert_eq!(
-            solid.background_color, 0xFFFF_FFFF,
-            "faceColor=none 센티넬 보존"
-        );
-        assert_eq!(
-            solid.pattern_color, 0xFF00_0000,
-            "hatchColor=#FF000000 보존"
-        );
-        assert_eq!(solid.pattern_type, -1, "무늬 없음");
+            // 렌더는 빈 채우기.
+            assert_eq!(
+                bf.fill.fill_type,
+                FillType::None,
+                "빈 winBrush 는 렌더상 채움 없음"
+            );
+            // 직렬화 복원을 위해 solid 데이터는 보존.
+            let solid = bf
+                .fill
+                .solid
+                .as_ref()
+                .expect("winBrush solid 데이터 보존 필요");
+            assert_eq!(
+                solid.background_color, 0xFFFF_FFFF,
+                "faceColor=none 센티넬 보존"
+            );
+            assert_eq!(
+                solid.pattern_color, 0xFF00_0000,
+                "hatchColor=#FF000000 보존"
+            );
+            assert_eq!(solid.pattern_type, -1, "무늬 없음");
+        }
     }
 
     #[test]

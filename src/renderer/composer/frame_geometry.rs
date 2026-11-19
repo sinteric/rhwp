@@ -1,0 +1,142 @@
+//! 재조판한 프레임의 좌표를 측정과 배치에 함께 전달한다.
+
+use super::ComposedParagraph;
+use crate::model::paragraph::{LineSeg, Paragraph, SpaceMetric};
+use std::borrow::Cow;
+
+#[derive(Debug, Clone)]
+pub(crate) struct FrameGeometry {
+    pub(super) line_segs: Vec<LineSeg>,
+    pub(super) space_metrics: Vec<(u32, SpaceMetric)>,
+    pub(super) inline_table_heights: Vec<(usize, u32)>,
+    /// 높이만 갱신한 저장 줄은 원본의 줄 소속과 HWPX 문자 주소 축을 유지한다.
+    pub(super) stored_partition: bool,
+}
+
+impl ComposedParagraph {
+    /// 현재 줄 소속을 셀의 정렬·저장 extent·실제 문단 배치까지 함께 전달한다.
+    pub(crate) fn cell_with_frame_geometry(
+        composed: &[Self],
+        source: &crate::model::table::Cell,
+    ) -> Option<crate::model::table::Cell> {
+        let mut projected = None;
+        for (index, (common, paragraph)) in composed.iter().zip(&source.paragraphs).enumerate() {
+            if let Cow::Owned(paragraph) = common.paragraph_with_frame_geometry(paragraph) {
+                let cell = projected.get_or_insert_with(|| source.clone());
+                cell.paragraphs[index] = paragraph;
+            }
+        }
+        projected
+    }
+    /// 여러 인라인 표의 같은 줄/다른 줄 소속을 현재 프레임이 발행했는지 본다.
+    pub(crate) fn frame_owns_multiple_inline_tables(&self) -> bool {
+        self.frame_geometry
+            .as_ref()
+            .is_some_and(|frame| !frame.stored_partition && frame.inline_table_heights.len() > 1)
+    }
+
+    /// 저장 줄과 현재 프레임은 같은 원시 제어문 슬롯 축을 소비한다.
+    pub(crate) fn control_line_indices(&self, para: &Paragraph) -> Option<Vec<usize>> {
+        if let Some(frame) = self
+            .frame_geometry
+            .as_ref()
+            .filter(|frame| !frame.stored_partition)
+        {
+            (0..para.controls.len())
+                .map(|index| {
+                    super::control_slot_line_index_with_starts(
+                        para,
+                        index,
+                        frame.line_segs.iter().map(|segment| segment.text_start),
+                    )
+                })
+                .collect()
+        } else if crate::renderer::para_has_no_stored_line_segs(para) {
+            // 합성 줄은 저장 캐시로 수용하지 않는다. 대신 조합기가 이미 발행한
+            // 줄의 글자 범위로 개체의 실제 줄 소속을 정해 측정과 전체·부분 배치가 공유한다.
+            // [#8995] 조합기의 인라인 개체 목록은 줄 소속을 0 으로만 싣는다
+            // (`try_identify_inline_controls`). 그 값을 그대로 쓰면 둘째 줄의 표도 첫 줄
+            // 글자 뒤 펜을 받아 쪽 밖으로 밀린다. 개체의 글자 위치가 시작한 마지막 줄이 소유자다.
+            let positions = para.control_text_positions();
+            (0..para.controls.len())
+                .map(|index| {
+                    self.inline_controls
+                        .iter()
+                        .find(|owner| owner.control_index == index)?;
+                    let position = *positions.get(index)?;
+                    Some(
+                        self.lines
+                            .iter()
+                            .rposition(|line| line.char_start <= position)
+                            .unwrap_or(0),
+                    )
+                })
+                .collect()
+        } else {
+            crate::renderer::float_placement::stored_control_line_indices(para)
+        }
+    }
+
+    /// 원본 표의 식별자는 유지하고 앵커 계산에는 현재 프레임의 본체 높이를 쓴다.
+    pub(crate) fn inline_table_height_hu(&self, index: usize) -> Option<u32> {
+        self.frame_geometry
+            .as_ref()?
+            .inline_table_heights
+            .iter()
+            .find_map(|&(owner, height)| (owner == index).then_some(height))
+    }
+
+    /// 실제 프레임 줄의 점유 높이에 포함해 발행한 인라인 표인지 조회한다.
+    pub(crate) fn frame_owns_inline_table(&self, index: usize) -> bool {
+        self.frame_geometry.as_ref().is_some_and(|frame| {
+            !frame.stored_partition
+                && frame
+                    .inline_table_heights
+                    .iter()
+                    .any(|&(owner, _)| owner == index)
+        })
+    }
+
+    /// 원본의 내용·속성을 유지하고 줄 좌표만 실제 재조판 결과로 읽는다.
+    /// 좌표가 바뀌지 않은 문단은 복사 없이 원본을 빌린다.
+    pub(crate) fn paragraph_with_frame_geometry<'a>(
+        &self,
+        source: &'a Paragraph,
+    ) -> Cow<'a, Paragraph> {
+        match self.paragraph_with_frame_geometry_with_storage(source, &crate::storage::Unbounded) {
+            Ok(value) => value,
+            Err(never) => match never {},
+        }
+    }
+    pub(crate) fn paragraph_with_frame_geometry_with_storage<'a, S: crate::storage::Storage>(
+        &self,
+        source: &'a Paragraph,
+        storage: &S,
+    ) -> Result<Cow<'a, Paragraph>, S::Error> {
+        Ok({
+            match &self.frame_geometry {
+                Some(frame) => {
+                    let mut paragraph = storage.clone_paragraph(source)?;
+                    let lines = crate::storage::try_clone(&frame.line_segs, storage)?;
+                    let spaces = crate::storage::try_clone(&frame.space_metrics, storage)?;
+                    if frame.stored_partition {
+                        paragraph.line_segs = lines;
+                        paragraph.layout_space_metrics = spaces;
+                        paragraph.source_line_seg_vertical_pos = None;
+                    } else {
+                        paragraph.replace_line_segs_with_space_metrics(lines, spaces);
+                    }
+                    for &(index, height) in &frame.inline_table_heights {
+                        if let Some(crate::model::control::Control::Table(table)) =
+                            paragraph.controls.get_mut(index)
+                        {
+                            table.common.height = height;
+                        }
+                    }
+                    Cow::Owned(paragraph)
+                }
+                None => Cow::Borrowed(source),
+            }
+        })
+    }
+}

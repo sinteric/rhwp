@@ -1165,8 +1165,9 @@ export class TableCellPropsDialog extends ModalDialog {
     const patTypeRow = this.row();
     patTypeRow.appendChild(this.label(i18nText('dialog.tableCellProps.label.label.x0829e0')));
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', i18nText('dialog.tableCellProps.selectOptions.label.x696251')], ['1', i18nText('dialog.tableCellProps.selectOptions.label.xd965c1')], ['2', i18nText('dialog.tableCellProps.selectOptions.label.x7842b4')], ['3', i18nText('dialog.tableCellProps.selectOptions.label.xf14cb1')],
-      ['4', i18nText('dialog.tableCellProps.selectOptions.label.xcf200e')], ['5', i18nText('dialog.tableCellProps.buildBackgroundTab.label')], ['6', i18nText('dialog.tableCellProps.buildBackgroundTab.label.x432dc9')],
+      // HWP 무늬 종류: -1=없음, 0~5 = ─ │ ＼ ／ ＋ × (#8978)
+      ['-1', i18nText('dialog.tableCellProps.selectOptions.label.x696251')], ['0', i18nText('dialog.tableCellProps.selectOptions.label.xd965c1')], ['1', i18nText('dialog.tableCellProps.selectOptions.label.x7842b4')], ['2', i18nText('dialog.tableCellProps.selectOptions.label.xf14cb1')],
+      ['3', i18nText('dialog.tableCellProps.selectOptions.label.xcf200e')], ['4', i18nText('dialog.tableCellProps.buildBackgroundTab.label')], ['5', i18nText('dialog.tableCellProps.buildBackgroundTab.label.x432dc9')],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
       this.bgColorRadio.checked = true;
@@ -1221,11 +1222,12 @@ export class TableCellPropsDialog extends ModalDialog {
   /** 배경 대상(셀/표) 전환 시 해당 속성으로 배경 상태 갱신 */
   private populateBgFromTarget(): void {
     const props = this.bgTarget === 'table' ? this.tableProps : this.cellProps;
+    this.bgPatternTypeSelect.value = '-1';
     if (props.fillType === 'solid' && props.fillColor) {
       this.bgColorRadio.checked = true;
       this.bgColorPicker.value = props.fillColor;
       this.bgPatternColorPicker.value = props.patternColor ?? '#000000';
-      this.bgPatternTypeSelect.value = props.patternType != null ? String(props.patternType) : '0';
+      this.bgPatternTypeSelect.value = props.patternType != null ? String(props.patternType) : '-1';
     } else {
       this.bgNoneRadio.checked = true;
     }
@@ -1240,19 +1242,19 @@ export class TableCellPropsDialog extends ModalDialog {
     }
     const faceColor = this.bgColorPicker.value;
     const patType = parseInt(this.bgPatternTypeSelect.value, 10);
-    if (patType === 0) {
+    if (patType < 0) {
       this.bgPreviewBox.style.background = faceColor;
       return;
     }
     const patColor = this.bgPatternColorPicker.value;
     // CSS repeating-linear-gradient 패턴
     const patternMap: Record<number, string> = {
-      1: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,  // 가로줄
-      2: `repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`, // 세로줄
-      3: `repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,// 역슬래시
-      4: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`, // 슬래시
-      5: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px),repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`, // 십자
-      6: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px),repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`, // X자
+      0: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,  // 가로줄
+      1: `repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`, // 세로줄
+      2: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`, // 역슬래시 ＼
+      3: `repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,// 슬래시 ／
+      4: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px),repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`, // 십자
+      5: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px),repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`, // X자
     };
     this.bgPreviewBox.style.background = `${patternMap[patType] || ''},${faceColor}`;
   }

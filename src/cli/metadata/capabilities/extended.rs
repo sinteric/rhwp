@@ -18,21 +18,46 @@ pub(super) fn extend(commands: &mut Vec<serde_json::Value>) {
                 "pages",
             ],
         ),
-        cmd_gated(
-            "export-png",
-            "문서를 페이지별 PNG로 렌더 (native-skia)",
-            cfg!(feature = "native-skia"),
-        ),
-        cmd_gated(
-            "export-png-gpu",
-            "SVG를 GPU(vello/wgpu)로 래스터화해 페이지별 PNG로 렌더 (--benchmark 로 CPU 대비 실측)",
-            cfg!(feature = "gpu"),
-        ),
-        cmd_gated(
-            "gpu-info",
-            "사용 가능한 GPU 어댑터 열거 (export-png-gpu 가 쓸 백엔드 확인)",
-            cfg!(feature = "gpu"),
-        ),
+        {
+            let mut command = cmd_gated(
+                "export-png",
+                "문서를 페이지별 PNG로 렌더하고 --json 매니페스트 출력 (native-skia)",
+                cfg!(feature = "native-skia"),
+            );
+            command["json"] = serde_json::json!(true);
+            command["flags"] = serde_json::json!([
+                "--page", "-p", "--output", "-o", "--font-path", "--profile", "--compat",
+                "--font-environment", "--dpi", "--scale", "--json", "--metadata-only",
+                "--render-tree-output"
+            ]);
+            command["recordFields"] = serde_json::json!([
+                "schemaVersion", "source", "backend", "comparisonProfile", "layoutGeneration",
+                "outputDir", "pageCount", "renderedCount", "pages"
+            ]);
+            command
+        },
+        {
+            let mut command = cmd_gated(
+                "export-kitty",
+                "문서를 Kitty graphics stdout 또는 페이지별 파일로 출력 (native-skia)",
+                cfg!(feature = "native-skia"),
+            );
+            command["flags"] = serde_json::json!([
+                "--page", "-p", "--output", "-o", "--width", "--font-path", "--profile", "--compat"
+            ]);
+            command
+        },
+        {
+            let mut command = cmd_gated(
+                "export-sixel",
+                "문서를 Sixel stdout 또는 페이지별 파일로 출력 (native-skia)",
+                cfg!(feature = "native-skia"),
+            );
+            command["flags"] = serde_json::json!([
+                "--page", "-p", "--output", "-o", "--width", "--font-path", "--profile", "--compat"
+            ]);
+            command
+        },
         cmd_json(
             "export-pdf",
             "문서를 PDF로 렌더 (svg|direct backend, --json 매니페스트)",
@@ -85,6 +110,18 @@ pub(super) fn extend(commands: &mut Vec<serde_json::Value>) {
                 "verifyPages",
             ],
         ),
+        {
+            let mut command = cmd_json(
+                "import-pdf",
+                "PDF 전체/선택 쪽을 HWPX 또는 HWP로 가져오기 (pdf-import feature)",
+                &["--source-pages", "--layout", "--json", "--table-inference", "--resource-profile", "--resource-limits"],
+                &["schemaVersion", "source", "output", "format", "bytes", "pageCount", "diagnostics", "resourceProfile", "execution"],
+            );
+            command["requiresFeature"] = serde_json::json!("pdf-import");
+            command["available"] = serde_json::json!(rhwp::pdf_support::pdf_import_support().enabled);
+            command["resourceProfiles"] = serde_json::json!(["standard", "constrained"]);
+            command
+        },
         cmd_json(
             "export-hml",
             "HML 원본을 HWPML 2.91 XML로 저장 (--json 봉투)",
@@ -389,8 +426,8 @@ pub(super) fn extend(commands: &mut Vec<serde_json::Value>) {
         ),
         cmd_json(
             "build-from-ingest",
-            "ingest JSON에서 HWPX 생성 (--json 봉투)",
-            &["-o", "--media-dir", "--json"],
+            "ingest JSON과 로컬 이미지에서 HWPX 생성 (--json 봉투)",
+            &["-o", "--output", "--media-dir", "--json", "--max-image-bytes", "--max-total-image-bytes", "--max-image-pixels", "--max-total-image-pixels", "--max-image-instances"],
             &[
                 "schemaVersion",
                 "source",
@@ -434,7 +471,7 @@ pub(super) fn extend(commands: &mut Vec<serde_json::Value>) {
         // ── 편집 (#3329 Stage 3) ──
         cmd_json(
             "edit",
-            "문서 편집 — fill-fields: 누름틀 채우기 / replace-text: 일괄 치환(--occurrence k번째만) / set-cell: 표 셀 기록 / insert-text-in-cell: 표 셀 문단 삽입 / delete-text-in-cell: 표 셀 문단 삭제 / insert-text: 문단 좌표 삽입 / delete-text: 문단 좌표 삭제 / insert-paragraph: 빈 문단 삽입 / delete-paragraph: 문단 삭제 / merge-paragraph: 문단 병합 / insert-page-break: 쪽 나눔 / insert-column-break: 단 나눔 / insert-table: 본문 표 생성 / insert-row: 표 행 삽입 / insert-col: 표 열 삽입 / delete-row: 표 행 삭제 / delete-col: 표 열 삭제 / merge-cells: 표 셀 병합 / split-cell: 병합 셀 분할 / split-table: 표 나누기 / fit-table: 표 폭 맞춤 / resize-table: 표 크기 조절 / merge-table: 다음 표와 붙이기 / merge-paragraph-in-cell: 표 셀 문단 병합 / set-column-widths: 표 열 폭 설정 / insert-footnote: 각주 삽입 / insert-endnote: 미주 삽입 / delete-footnote: 각주 삭제 / add-bookmark: 책갈피 추가 / delete-bookmark: 책갈피 삭제 / rename-bookmark: 책갈피 이름 변경 / delete-header-footer: 머리말/꼬리말 삭제 / insert-header-footer-text: 머리말/꼬리말 텍스트 삽입 / set-header-footer-text: 머리말/꼬리말 문단 텍스트 교체 / delete-hf-text: 머리말/꼬리말 텍스트 삭제 / split-paragraph-in-hf: 머리말/꼬리말 문단 분할 / merge-paragraph-in-hf: 머리말/꼬리말 문단 병합 / split-paragraph-in-cell: 표 셀 문단 분할 / delete-control: 컨트롤 삭제 / delete-table: 표 삭제 / insert-header-footer: 머리말/꼬리말 생성 / insert-image: 도장·서명 그림 삽입 / redact: 개인정보 마스킹 / sanitize: 메타데이터 제거",
+            "문서 편집 — fill-fields: 누름틀 채우기 / replace-text: 일괄 치환(--occurrence k번째만, 0부터, 생략 시 전체) / set-cell: 표 셀 기록 / insert-text-in-cell: 표 셀 문단 삽입 / delete-text-in-cell: 표 셀 문단 삭제 / insert-text: 문단 좌표 삽입 / delete-text: 문단 좌표 삭제 / insert-paragraph: 빈 문단 삽입 / delete-paragraph: 문단 삭제 / merge-paragraph: 문단 병합 / insert-page-break: 쪽 나눔 / insert-column-break: 단 나눔 / insert-table: 본문 표 생성 / insert-row: 표 행 삽입 / insert-col: 표 열 삽입 / delete-row: 표 행 삭제 / delete-col: 표 열 삭제 / merge-cells: 표 셀 병합 / split-cell: 병합 셀 분할 / split-table: 표 나누기 / fit-table: 표 폭 맞춤 / resize-table: 표 크기 조절 / merge-table: 다음 표와 붙이기 / merge-paragraph-in-cell: 표 셀 문단 병합 / set-column-widths: 표 열 폭 설정 / insert-footnote: 각주 삽입 / insert-endnote: 미주 삽입 / delete-footnote: 각주 삭제 / add-bookmark: 책갈피 추가 / delete-bookmark: 책갈피 삭제 / rename-bookmark: 책갈피 이름 변경 / delete-header-footer: 머리말/꼬리말 삭제 / insert-header-footer-text: 머리말/꼬리말 텍스트 삽입 / set-header-footer-text: 머리말/꼬리말 문단 텍스트 교체 / delete-hf-text: 머리말/꼬리말 텍스트 삭제 / split-paragraph-in-hf: 머리말/꼬리말 문단 분할 / merge-paragraph-in-hf: 머리말/꼬리말 문단 병합 / split-paragraph-in-cell: 표 셀 문단 분할 / delete-control: 컨트롤 삭제 / delete-table: 표 삭제 / insert-header-footer: 머리말/꼬리말 생성 / insert-image: 도장·서명 그림 삽입 / redact: 개인정보 마스킹 / sanitize: 메타데이터 제거",
             &[
                 "--data",
                 "--find",

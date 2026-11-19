@@ -15,6 +15,10 @@ pub(crate) fn external_picture_basename(path: &str) -> &str {
 pub struct Picture {
     /// 개체 공통 속성
     pub common: CommonObjAttr,
+    /// Integrity seal for a proven PDF stroke fragment, restored by the bounded sidecar.
+    /// Geometry or resource edits invalidate its authority to delete the picture.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_paint_fingerprint: Option<[u8; 32]>,
     /// 개체 요소 속성
     pub shape_attr: ShapeComponentAttr,
     /// 테두리 색
@@ -23,9 +27,10 @@ pub struct Picture {
     pub border_width: i32,
     /// 테두리 속성
     pub border_attr: ShapeBorderLine,
-    /// 이미지 테두리 좌표 X (4개)
+    /// 그림 꼭짓점의 앞 네 INT32: [pt0.x, pt0.y, pt1.x, pt1.y].
+    /// 기존 필드명과 달리 X 좌표만의 배열이 아니다.
     pub border_x: [i32; 4],
-    /// 이미지 테두리 좌표 Y (4개)
+    /// 그림 꼭짓점의 뒤 네 INT32: [pt2.x, pt2.y, pt3.x, pt3.y].
     pub border_y: [i32; 4],
     /// 자르기 정보
     pub crop: CropInfo,
@@ -48,10 +53,11 @@ pub struct Picture {
     pub effects: PictureEffects,
     /// 캡션
     pub caption: Option<super::shape::Caption>,
-    /// HWPX `<hp:imgDim>` 원본 이미지 픽셀 크기 (#1389).
+    /// HWP5 표 116의 기준 이미지 크기(HWPUNIT 두 개), HWPX `<hp:imgDim>` 대응.
     ///
-    /// imgClip extent 와 독립(전수 측정: 불일치 24/170) — 원본 이미지 픽셀 크기를
-    /// verbatim 보존한다. (dimwidth, dimheight). HWPX 파서만 적재.
+    /// crop과 같은 원본 좌표계의 전체 범위이며 디코딩된 bitmap 픽셀 크기와 구별한다.
+    /// imgClip extent와 독립(전수 측정: 불일치 24/170)인 (dimwidth, dimheight)를
+    /// 그대로 보존한다. HWP5·HWPX 파서가 모두 적재한다.
     pub img_dim: (u32, u32),
     /// HWPX `<hp:pic reverse="...">` 값 — 그림 좌우 반전(한컴 Automation
     /// `InsertPicture`의 `reverse` 옵션과 동일 개념). 파서가 읽지 않고 직렬화기가
@@ -63,6 +69,50 @@ pub struct Picture {
 }
 
 impl Picture {
+    /// Construct an embedded picture with the existing insertion geometry contract.
+    /// `common` owns placement; the source crop and imgDim both use pixels × 75.
+    pub(crate) fn from_embedded_image(
+        common: CommonObjAttr,
+        bin_data_id: u16,
+        natural_width_px: u32,
+        natural_height_px: u32,
+    ) -> Self {
+        let width = common.width;
+        let height = common.height;
+        let img_dim = (natural_width_px * 75, natural_height_px * 75);
+        Self {
+            common,
+            shape_attr: ShapeComponentAttr {
+                original_width: width,
+                original_height: height,
+                current_width: width,
+                current_height: height,
+                local_file_version: 1,
+                render_sx: 1.0,
+                render_sy: 1.0,
+                ..Default::default()
+            },
+            border_x: [0, 0, width as i32, 0],
+            border_y: [width as i32, height as i32, 0, height as i32],
+            crop: CropInfo {
+                left: 0,
+                top: 0,
+                right: img_dim.0 as i32,
+                bottom: img_dim.1 as i32,
+            },
+            img_dim,
+            image_attr: ImageAttr {
+                bin_data_id,
+                brightness: 0,
+                contrast: 0,
+                effect: ImageEffect::RealPic,
+                transparency: 0,
+                external_path: None,
+            },
+            ..Default::default()
+        }
+    }
+
     /// 저장된 자르기 폭이 있으면 높이가 비어 있어도 그 선택을 보존한다.
     /// 빈 선택을 자르기 없음으로 바꾸면 한컴이 그리지 않는 원본 전체가 나타난다.
     pub fn render_crop_rect(&self) -> Option<(i32, i32, i32, i32)> {
@@ -75,7 +125,29 @@ impl Picture {
     /// HWPX `imgClip`은 디코딩된 비트맵 픽셀과 항상 75 HU/px 관계가 아니며,
     /// 이 경우 `imgDim`이 실제 좌표 범위를 보존한다.
     pub fn crop_reference_size(&self) -> Option<(u32, u32)> {
-        (self.img_dim.0 > 0 && self.img_dim.1 > 0).then_some(self.img_dim)
+        if self.img_dim.0 > 0 && self.img_dim.1 > 0 {
+            return Some(self.img_dim);
+        }
+        // 원본 개체 좌표와 crop이 같은 전체 창이면 별도 imgDim이 없어도
+        // 전체 그림임을 source가 증명한다. 디코딩 픽셀의 두 축에서 배율을
+        // 추정하면 저장 단위의 반올림 차이가 거짓 부분 crop으로 바뀐다.
+        // 실제 부분 선택과 원본 크기를 현재 크기로 보충한 개체는 기존
+        // crop 추론을 유지하며, 명시된 imgDim을 덮어쓰지 않는다.
+        let attr = &self.shape_attr;
+        if attr.original_width_was_zero || attr.original_height_was_zero {
+            return None;
+        }
+        let (width, height) = (attr.original_width, attr.original_height);
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let full = (
+            0,
+            0,
+            i32::try_from(width).ok()?,
+            i32::try_from(height).ok()?,
+        );
+        (self.render_crop_rect()? == full).then_some((width, height))
     }
 }
 
@@ -112,6 +184,22 @@ pub struct ImageAttr {
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct PictureEffects {
     pub shadow: Option<PictureShadow>,
+    /// HWP5 표 111 / HWPX hp:softEdge의 반경(HWPUNIT).
+    /// 이미지 크기·crop과 별개인 그림 효과이며 원본 좌표에 더하지 않는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub soft_edge_radius: Option<f64>,
+}
+
+/// 단독 부드러운 가장자리 꼬리는 반경 뒤 원본 크기·alpha가 생략될 수도 있다.
+/// 가변 길이인 다른 효과의 내부 오프셋을 추측하지 않는다.
+pub(crate) fn picture_soft_edge_radius(extra: &[u8]) -> Option<f64> {
+    if !matches!(extra.len(), 13 | 21 | 22)
+        || u32::from_le_bytes(extra.get(5..9)?.try_into().ok()?) != PICTURE_EFFECT_SOFT_EDGE
+    {
+        return None;
+    }
+    let radius = f32::from_le_bytes(extra.get(9..13)?.try_into().ok()?) as f64;
+    (radius.is_finite() && radius >= 0.0).then_some(radius)
 }
 
 /// HWPX 그림 그림자 효과 (`hp:shadow`).
@@ -197,6 +285,91 @@ pub fn transparency_percent_to_alpha_byte(transparency: u8) -> u8 {
 /// HWP/HWPX 저장용 alpha byte(0~255)를 한컴 UI 투명도(0~100%)로 변환한다.
 pub fn alpha_byte_to_transparency_percent(alpha: u8) -> u8 {
     ((alpha as f64 * 100.0) / 255.0).round().clamp(0.0, 100.0) as u8
+}
+
+/// HWP5 SHAPE_COMPONENT_PICTURE 꼬리(`raw_picture_extra`) 안 필드 위치.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PictureExtraLayout {
+    /// 원본 그림 크기(dimwidth u32, dimheight u32)의 시작 위치.
+    pub dim_offset: Option<usize>,
+    /// 그림 투명도(alpha byte) 위치.
+    pub alpha_offset: Option<usize>,
+}
+
+/// 그림 효과 플래그 중 부드러운 가장자리(표 108·111). 뒤에 반경 f32 하나가 온다.
+const PICTURE_EFFECT_SOFT_EDGE: u32 = 0x4;
+
+/// 그림 꼬리의 구조를 판정한다.
+///
+/// 꼬리는 [테두리 투명도 u8][인스턴스 id u32][그림 효과 정보][dimwidth u32]
+/// [dimheight u32][투명도 u8, 생략 가능] 이다(표 107). 그림 효과 정보는 [효과 플래그
+/// u32][효과별 정보] 이고(표 108), 효과가 없으면 플래그 0 뿐이라 꼬리가 17/18 바이트로
+/// 고정된다. 부드러운 가장자리(플래그 4)는 반경 f32 4바이트를 더 둔다(표 111). 고정
+/// 위치 9..17 로 읽으면 반경이 dimwidth 로 읽혀 자르기 영역이 원본의 극히 일부가 된다.
+///
+/// 확인한 효과의 가변 색상 레코드를 건너뛰어 크기·alpha의 공용 위치를 구한다.
+/// 기존 soft-edge 처리와 파서·직렬화기의 단일 판정을 유지한다.
+pub(crate) fn picture_extra_layout(extra: &[u8]) -> PictureExtraLayout {
+    let legacy = PictureExtraLayout {
+        dim_offset: (extra.len() >= 17).then_some(9),
+        alpha_offset: (extra.len() >= 18).then(|| extra.len() - 1),
+    };
+    let Some(offset) = picture_dimensions_offset(extra) else {
+        return legacy;
+    };
+    match extra.len().checked_sub(offset) {
+        Some(0) => PictureExtraLayout {
+            dim_offset: None,
+            alpha_offset: None,
+        },
+        Some(8) => PictureExtraLayout {
+            dim_offset: Some(offset),
+            alpha_offset: None,
+        },
+        Some(9) => PictureExtraLayout {
+            dim_offset: Some(offset),
+            alpha_offset: Some(offset + 8),
+        },
+        _ => legacy,
+    }
+}
+
+// #7668 원 구현의 효과별 길이 판정을 공용 모델 계층으로 옮긴다.
+// 알 수 없는 색상·잘린 레코드의 길이는 추측하지 않는다.
+fn picture_dimensions_offset(extra: &[u8]) -> Option<usize> {
+    let flags = u32::from_le_bytes(extra.get(5..9)?.try_into().ok()?);
+    if flags & !0x0f != 0 {
+        return None;
+    }
+    let mut remaining = extra.get(9..)?;
+    if flags & 1 != 0 {
+        remaining = remaining.get(44..)?;
+        remaining = skip_picture_effect_color(remaining)?;
+    }
+    if flags & 2 != 0 {
+        remaining = remaining.get(8..)?;
+        remaining = skip_picture_effect_color(remaining)?;
+    }
+    if flags & 4 != 0 {
+        remaining = remaining.get(4..)?;
+    }
+    if flags & 8 != 0 {
+        remaining = remaining.get(14 * 4..)?;
+    }
+    Some(extra.len() - remaining.len())
+}
+
+fn skip_picture_effect_color(bytes: &[u8]) -> Option<&[u8]> {
+    let kind = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    if kind != 0 {
+        return None;
+    }
+    let count = u32::from_le_bytes(bytes.get(8..12)?.try_into().ok()?);
+    let length = usize::try_from(count)
+        .ok()?
+        .checked_mul(8)?
+        .checked_add(12)?;
+    bytes.get(length..)
 }
 
 /// 이미지 효과

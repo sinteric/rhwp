@@ -2,7 +2,7 @@
 kind: guide
 status: active
 canonical: mydocs/manual/cli_commands.md
-last_verified: 2026-07-16
+last_verified: 2026-10-14
 ---
 
 # rhwp export-png 명령 매뉴얼
@@ -14,7 +14,7 @@ HWP 문서를 PNG 이미지로 내보내는 native Skia raster backend 도구. P
 ## 사전 조건
 
 - **`native-skia` feature 빌드 필수** (기본 빌드에는 미포함)
-- 빌드: `cargo build --release --features native-skia`
+- 빌드: `cargo build --locked --target-dir target/pr-review -j 8 --features native-skia --bin rhwp`
 
 ## 사용법
 
@@ -27,12 +27,50 @@ rhwp export-png <파일.hwp> [옵션]
 | 옵션 | 단축 | 설명 |
 |------|------|------|
 | `--output <폴더>` | `-o` | 출력 폴더 (기본: `output/`) |
-| `--page <번호>` | `-p` | 특정 페이지만 내보내기 (0부터 시작) |
+| `--page <번호>` | `-p` | 선택 쪽 (0부터 시작, 여러 번 지정 가능, 중복·범위 밖 번호는 실패) |
+| `--json` | | stdout에 전체 쪽수·실제 산출물 경로·bytes JSON만 출력 |
+| `--metadata-only` | | PNG 없이 전체 쪽수 JSON만 출력 |
+| `--render-tree-output <폴더>` | | 같은 문서의 선택 쪽 render tree를 함께 저장 |
+| `--profile <프로필>` | | screen(기본)/print/high-quality/fast-preview |
+| `--compat 2022\|2024` | | 목표 한글 조판 세대 (기본 2022) |
+| `--font-environment <JSON>` | | 명시적인 조판·출력 글꼴 환경 |
 | `--font-path <경로>` | | 폰트 파일 탐색 경로 (여러 번 지정 가능) |
 | `--scale <배율>` | | 렌더링 배율 (기본: 1.0) |
 | `--max-dimension <픽셀>` | | 한 변 최대 픽셀 (longest edge). 자동 scale 계산 |
 | `--vlm-target <프리셋>` | | VLM (Vision-Language Model) 입력 프리셋 |
 | `--dpi <값>` | | DPI 메타데이터 (PNG `pHYs` chunk). 인쇄 워크플로우 크기 힌트 |
+
+### JSON의 실제 대체 글꼴 관측
+
+Native PNG를 실제로 그리는 동안 고른 대체 face는
+`nativeFontSupply.localFallbacks`에 기록한다.
+
+- `records`: 요청한 `requested`, 선택한 `resolved`, 공급 출처 `source`
+  (`custom`·`system`·`bundled`·`legacy`)와 요청 스타일 `bold`·`italic`.
+- `missingRequests`: 준비된 후보 중 해당 문자의 glyph를 찾지 못한 요청 글꼴 이름.
+  본문 문자 자체는 보고서에 담지 않는다.
+- `state`: 관측을 완료하면 `complete`, 상한 초과 또는 일부 페이지 실패면 `partial`,
+  `--metadata-only`로 실제 출력하지 않았으면 `notRendered`.
+- `scope`: `nativeTextTypefaceSelection`. 이미지 내부 SVG·메타파일의 별도 글꼴 선택까지
+  관측했다는 의미는 아니다.
+- 상한은 항목 256개·요청/해결 이름 합계 64 KiB다. 초과한 관측은
+  `droppedObservations`에 집계하며 완전한 결과로 표시하지 않는다.
+
+관측 범위는 이번 명령에서 실제로 출력한 쪽이다. `--page`를 사용했다면 선택하지 않은 쪽의
+글꼴 선택까지 포함하지 않는다. `requested`는 렌더러에 전달된 요청 이름이며, 출력 전 치환이
+있으면 원본 이름과의 연결은 `mappings`에서 확인한다.
+
+실제로 일반 대체를 선택한 요청 이름은 `genericFallbacks`에도 합친다.
+원래 글꼴이나 명시 공급 face를 정상 선택한 것은 일반 대체로 세지 않는다.
+`mappings`·`resources`는 출력 전 공급·치환 준비 기록이며 실제 선택 관측과 구분한다.
+다운로드 실패가 `unavailable`에 있어도 설치된 대체 face로 그릴 수 있다.
+자동 검수는 `state`와 `missingRequests`를 함께 확인한다. 관측이 `complete`라는 사실만으로
+원본과 같은 조판이나 모든 문자의 정상 표시를 보장하지 않는다.
+
+```bash
+rhwp export-png 문서.hwpx --json -o output/png > output/png-report.json
+jq '.nativeFontSupply.localFallbacks | {state, scope, records, missingRequests}' output/png-report.json
+```
 
 ### VLM 프리셋
 

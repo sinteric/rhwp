@@ -1,0 +1,145 @@
+//! 저장 선행 간격의 공통 원점: 측정과 실제 배치가 같은 경계를 소비한다.
+use super::{hwpunit_to_px, Control, Paragraph};
+
+/// A saved first line fixes both the column origin and retained before-space.
+/// Pagination and paint consume this same frame instead of rebasing separately.
+#[derive(Clone, Copy, Debug)]
+pub struct StoredColumnTopSpacing {
+    pub before: f64,
+    pub source_origin_hu: i32,
+}
+crate::storage::clone_copy!(StoredColumnTopSpacing);
+
+/// 정규화한 연속 좌표와 원본의 쪽 상대 사다리를 섞지 않는다.
+/// 보존한 원본 좌표가 있으면 같은 줄 수의 완전한 원장만 사용한다.
+pub(super) fn source_line_position(para: &Paragraph, index: usize) -> Option<i32> {
+    match &para.source_line_seg_vertical_pos {
+        Some(positions) if positions.len() == para.line_segs.len() => positions.get(index).copied(),
+        Some(_) => None,
+        None => para.line_segs.get(index).map(|line| line.vertical_pos),
+    }
+}
+
+/// 텍스트가 없는 인라인 개체들이 한 저장 줄 상자 전체를 소유하는지 확인한다.
+/// 같은 줄의 개체 높이는 합산하지 않고 바깥 상자의 최대 높이로 닫는다.
+pub(super) fn closed_inline_object_line(para: &Paragraph) -> bool {
+    let [line] = para.line_segs.as_slice() else {
+        return false;
+    };
+    if !para
+        .text
+        .chars()
+        .all(|ch| ch.is_whitespace() || ch < '\u{0020}' || ch == '\u{FFFC}')
+    {
+        return false;
+    }
+    let mut maximum = 0;
+    for control in &para.controls {
+        if crate::renderer::control_is_body_flow_neutral_marker(control) {
+            continue;
+        }
+        let (inline, height, top, bottom) = match control {
+            Control::Table(table) => (
+                table.common.treat_as_char,
+                i64::from(table.common.height),
+                i64::from(table.outer_margin_top),
+                i64::from(table.outer_margin_bottom),
+            ),
+            Control::Shape(shape) => (
+                shape.common().treat_as_char,
+                i64::from(shape.flow_height_hu()),
+                i64::from(shape.common().margin.top),
+                i64::from(shape.common().margin.bottom),
+            ),
+            _ => return false,
+        };
+        if !inline || height <= 0 || height >= 0x8000_0000 {
+            return false;
+        }
+        maximum = maximum.max(height + top + bottom);
+    }
+    maximum > 0 && i64::from(line.line_height) == maximum
+}
+
+/// Resolve a saved first-line before-space without confusing a continuous
+/// section coordinate with a page coordinate. The caller already reserved
+/// `spacing_before`; a closed source boundary proves that paint must keep it.
+pub(crate) fn stored_column_top_spacing_before(
+    paragraphs: &[Paragraph],
+    index: usize,
+    spacing_before: f64,
+    styles: &crate::renderer::style_resolver::ResolvedStyleSet,
+    dpi: f64,
+) -> Option<StoredColumnTopSpacing> {
+    let current = paragraphs.get(index)?;
+    // 작은 글자처럼 도형이 저장 글줄 상자 안에 들어가면 그 줄의 원점과 간격은 글줄과 같다.
+    // 적재 경로의 저장 사다리 연결과 같은 판정을 쓴다.
+    let valid = |para: &Paragraph| {
+        (para
+            .controls
+            .iter()
+            .all(crate::renderer::control_is_body_flow_neutral_marker)
+            || closed_inline_object_line(para)
+            || crate::renderer::stored_frame_boundary::inline_graphics_fit_saved_text_line(
+                para,
+                styles
+                    .para_styles
+                    .get(para.para_shape_id as usize)
+                    .map_or(0, |style| style.vertical_alignment),
+            ))
+            && !para.stored_text_partition_is_dirty()
+            && !para.cell_format_vpos_dirty
+            && !para.line_segs.is_empty()
+            && para.line_segs.iter().all(|line| {
+                line.tag & crate::model::paragraph::LineSeg::TAG_IMPLEMENTATION_PROPERTY == 0
+                    && line.vertical_pos >= 0
+                    && line.line_height > 0
+                    && line.line_spacing >= 0
+            })
+    };
+    // 현재 문단의 첫 저장 경계만 사용한다. 뒤 줄의 쪽 되감김은 그 경계를
+    // 무효화하지 않는다. 새 쪽 전체 이월 여부는 호출자의 소유·흐름 검사로 확정된다.
+    if !valid(current) || !spacing_before.is_finite() || spacing_before <= 0.0 {
+        return None;
+    }
+    let first = source_line_position(current, 0)?;
+    let one_source_unit = dpi / 7200.0;
+    let frame = StoredColumnTopSpacing {
+        before: spacing_before,
+        // 원본 사다리로 간격을 인증하되, 소비자에게는 현재 줄 좌표계의 원점을 준다.
+        // 재구성 전 원시 vpos를 돌려주면 이미 이동한 뒤 문단만 그 차이만큼 당겨진다.
+        source_origin_hu: current
+            .line_segs
+            .first()?
+            .vertical_pos
+            .checked_sub(crate::renderer::px_to_hwpunit(spacing_before, dpi))?,
+    };
+    if (hwpunit_to_px(first, dpi) - spacing_before).abs() <= one_source_unit {
+        return Some(frame);
+    }
+    let previous = paragraphs.get(index.checked_sub(1)?)?;
+    if !valid(previous)
+        || !previous.line_segs.windows(2).all(|lines| {
+            lines[1]
+                .vertical_pos
+                .checked_sub(lines[0].vertical_pos)
+                .is_some_and(|delta| delta >= lines[0].line_height)
+        })
+    {
+        return None;
+    }
+    let last_index = previous.line_segs.len() - 1;
+    let last = &previous.line_segs[last_index];
+    let gap = first
+        .checked_sub(source_line_position(previous, last_index)?)?
+        .checked_sub(last.line_height)?
+        .checked_sub(last.line_spacing)?;
+    let previous_after = styles
+        .para_styles
+        .get(previous.para_shape_id as usize)?
+        .spacing_after;
+    // Close both paragraphs' declared spaces against their saved boundary;
+    // unexplained blank space is left to its own flow contract.
+    ((hwpunit_to_px(gap, dpi) - previous_after - spacing_before).abs() <= one_source_unit)
+        .then_some(frame)
+}

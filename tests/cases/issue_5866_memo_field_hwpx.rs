@@ -109,8 +109,8 @@ fn issue_5866_real_hwp5_memo_document_emits_memo_not_crossref() {
             zip.by_index(i)
                 .unwrap()
                 .name()
-                .expect("zip 항목 이름")
-                .into_owned()
+                .expect("ZIP 엔트리 이름")
+                .to_string()
         })
         .filter(|n| n.starts_with("Contents/section") && n.ends_with(".xml"))
         .collect();

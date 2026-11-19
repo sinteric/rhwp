@@ -45,7 +45,7 @@ fn hwpx_with_body_level_ole_equation() -> Vec<u8> {
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let names: Vec<String> = src
         .file_names()
-        .map(|n| n.expect("zip 항목 이름").into_owned())
+        .map(|name| name.expect("ZIP 엔트리 이름").into_owned())
         .collect();
     let mut spliced = false;
     for name in names {

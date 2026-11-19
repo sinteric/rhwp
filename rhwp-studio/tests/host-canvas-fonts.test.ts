@@ -1,37 +1,100 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { HostCanvasFontSession, scopedHostCanvasFont, withHostCanvasFonts } from '../src/core/host-canvas-fonts.ts';
-import { setHostFontProvider, resolveRendererLocalFont } from '../src/core/local-fonts.ts';
+import { setHostFontProvider, resolveRendererLocalFont, resolveRendererLocalFontCandidates } from '../src/core/local-fonts.ts';
+import type { FontSymbolInspector } from '../src/core/font-symbol-coverage.ts';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(done => { resolve = done; });
   return { promise, resolve };
 }
-async function fixture() {
+async function fixture(inspect?: FontSymbolInspector, bytes = Uint8Array.of(1, 2, 3).buffer) {
   const oldDocument = globalThis.document;
   const oldFontFace = globalThis.FontFace;
   const fonts = new Set<FontFace>();
+  const registrations: Array<{ bytes: ArrayBuffer; descriptors: FontFaceDescriptors }> = [];
   let loaded = () => Promise.resolve();
   class FakeFontFace {
     family: string;
-    constructor(family: string, _bytes: ArrayBuffer, _descriptors: FontFaceDescriptors) { this.family = family; }
+    constructor(family: string, bytes: ArrayBuffer, descriptors: FontFaceDescriptors) {
+      this.family = family; registrations.push({ bytes, descriptors });
+    }
     async load() { await loaded(); return this; }
   }
   Object.assign(globalThis, { document: { fonts }, FontFace: FakeFontFace });
-  const session = new HostCanvasFontSession();
+  const session = new HostCanvasFontSession(inspect);
   let changed = () => {};
   const provider = {
     async getSnapshot() { return { revision: 'r1', faces: [{ id: 'face', family: 'Host Test',
       fullName: 'Host Test Italic', postscriptName: 'HostTest-Italic', style: 'Italic', weight: 400, slant: 'italic' as const }] }; },
-    async readFace() { return { bytes: Uint8Array.of(1, 2, 3).buffer }; },
+    async readFace() { return { bytes }; },
     subscribe(listener: () => void) { changed = listener; return () => {}; },
   };
   await setHostFontProvider(provider);
   const records = () => [resolveRendererLocalFont('Host Test', { weight: 400, slant: 'italic' })!];
-  return { session, provider, records, fonts, changed: () => changed(), setLoad: (fn: typeof loaded) => { loaded = fn; },
+  return { session, provider, records, fonts, registrations, changed: () => changed(), setLoad: (fn: typeof loaded) => { loaded = fn; },
     async dispose() { session.reset(); await setHostFontProvider(null); Object.assign(globalThis, { document: oldDocument, FontFace: oldFontFace }); } };
 }
+
+test('분할 OTF는 준비된 순서대로 Canvas family 사다리에 포함한다', async () => {
+  const f = await fixture();
+  const font = readFileSync(new URL('../../tests/fixtures/fonts/RHWPHftOutline.otf', import.meta.url));
+  const bytes = font.buffer.slice(font.byteOffset, font.byteOffset + font.byteLength) as ArrayBuffer;
+  const faces = ['Latin', 'Hangul'].map(id => ({id, family: 'Split', fullName: `Split ${id}`,
+    postscriptName: `Split-${id}`, style: 'Regular', weight: 400, slant: 'normal' as const}));
+  try {
+    await setHostFontProvider({ ...f.provider, async getSnapshot() { return {revision: 'split', faces}; },
+      async readFace() { return {bytes}; } });
+    const records = resolveRendererLocalFontCandidates('Split', {weight: 400, slant: 'normal'});
+    assert.deepEqual(records.map(record => record.postscriptName), ['Split-Latin', 'Split-Hangul']);
+    const outlines: string[] = [], coverage: string[] = [], clears: string[] = [];
+    const chains: Array<{family: string; programs: Uint8Array[]}> = [];
+    await f.session.prepare(records, {registerHftOutlineFont(family) { outlines.push(family); },
+      registerHftOutlineFontCandidates(family, programs) { chains.push({family, programs}); },
+      registerTextFontGlyphCoverage(family) { coverage.push(family); },
+      clearTextFontFamily(family) { clears.push(family); }});
+    assert.equal(clears.filter(family => family === 'Split').length, 1,
+      '분할 family의 이전 세대 coverage를 한 번 비운다');
+    assert.equal(outlines.filter(family => family.toLowerCase() === 'split').length, 0,
+      '한 조각만 family 전체의 소유 프로그램으로 등록하지 않는다');
+    const chain = chains.find(chain => chain.family.toLowerCase() === 'split');
+    assert.equal(chain?.programs.length, 2, '실제 적재한 두 후보를 같은 순서로 공급한다');
+    assert.deepEqual(chain?.programs.map(program => [...program]), [[...font], [...font]]);
+    assert.equal(coverage.filter(family => family === 'Split').length, 0,
+      '마지막 조각의 cmap을 family 전체의 coverage로 기록하지 않는다');
+    const css = withHostCanvasFonts(f.session, () => scopedHostCanvasFont('20px "Split", serif'));
+    assert.match(css!, /__rhwp_host_face_\d+_1.*__rhwp_host_face_\d+_2/);
+  } finally { await f.dispose(); }
+});
+
+test('같은 family의 OTF와 TTF를 모두 준비하고 OTF를 먼저 표시한다', async () => {
+  const f = await fixture();
+  const data = (name: string) => {
+    const file = readFileSync(new URL(`../../tests/fixtures/fonts/${name}`, import.meta.url));
+    return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+  };
+  const faces = ['TTF', 'CFF'].map(id => ({id, family: 'Mixed', fullName: `Mixed ${id}`,
+    postscriptName: `Mixed-${id}`, style: 'Regular', weight: 400, slant: 'normal' as const}));
+  try {
+    await setHostFontProvider({ ...f.provider, async getSnapshot() { return {revision: 'mixed', faces}; },
+      async readFace(id) { return {bytes: data(id === 'TTF' ? 'RHWPHostFixture-Regular.ttf' : 'RHWPHftOutline.otf')}; } });
+    const records = resolveRendererLocalFontCandidates('Mixed', {weight: 400, slant: 'normal'});
+    await f.session.prepare(records);
+    const css = withHostCanvasFonts(f.session, () => scopedHostCanvasFont('20px "Mixed", serif'));
+    assert.match(css!, /__rhwp_host_face_\d+_2.*__rhwp_host_face_\d+_1/);
+    const ttfCss = withHostCanvasFonts(f.session, () =>
+      scopedHostCanvasFont('20px "__rhwp_ttf__Mixed", "Mixed", serif'));
+    assert.match(ttfCss!, /__rhwp_host_face_\d+_1.*__rhwp_host_face_\d+_2/,
+      '원본 TTF는 같은 family의 TTF를 우선하고 없는 글자는 CFF로 대체한다');
+    await setHostFontProvider({ ...f.provider, async getSnapshot() { return {revision: 'only-ttf', faces}; },
+      async readFace() { return {bytes: data('RHWPHostFixture-Regular.ttf')}; } });
+    await f.session.prepare(resolveRendererLocalFontCandidates('Mixed', {weight: 400, slant: 'normal'}));
+    assert.equal(withHostCanvasFonts(f.session, () => scopedHostCanvasFont('20px "Mixed", serif')), null,
+      '동일 스타일의 모호한 TTF만 있을 때는 기존 선택 정책을 유지한다');
+  } finally { await f.dispose(); }
+});
 
 test('host aliases exist only in synchronous measurement/paint scope and are released on detach', async () => {
   const f = await fixture();
@@ -52,6 +115,55 @@ test('host aliases exist only in synchronous measurement/paint scope and are rel
   } finally { await f.dispose(); }
 });
 
+test('host FontFace와 주입한 공통 기호 검사기는 같은 실제 프로그램을 소비한다', async () => {
+  const original = Uint8Array.from(readFileSync(new URL('../../tests/fixtures/fonts/RHWPHostFixture-Regular.ttf', import.meta.url))).buffer;
+  const observed: Array<{ bytes: Uint8Array; faceIndex: number }> = [];
+  const f = await fixture((bytes, faceIndex) => {
+    observed.push({ bytes, faceIndex }); return 'U+0-26AA,U+26AC-10FFFF';
+  }, original);
+  try {
+    await f.session.prepare(f.records());
+    assert.equal(f.fonts.size, 1);
+    assert.equal(observed.length, 1);
+    assert.equal(observed[0].faceIndex, 0, '정규화한 단일 face의 실제 index');
+    assert.equal(observed[0].bytes.buffer, f.registrations[0].bytes, 'FontFace와 검사기의 동일한 프로그램 바이트');
+    assert.deepEqual(f.registrations[0].descriptors, {
+      weight: '400', style: 'italic', unicodeRange: 'U+0-26AA,U+26AC-10FFFF',
+    });
+  } finally { await f.dispose(); }
+});
+
+test('#8109 a prepared document substitute remains available behind an absent primary', async () => {
+  const f = await fixture();
+  try {
+    await f.session.prepare(f.records());
+    const direct = withHostCanvasFonts(f.session, () => scopedHostCanvasFont('italic 20px "Host Test"'))!;
+    const fallback = withHostCanvasFonts(f.session, () => scopedHostCanvasFont('italic 20px "Missing Source", "Host Test"'))!;
+    assert.match(fallback, /__rhwp_host_face_/);
+    assert.equal(fallback.split(',')[0], direct.split(',')[0], 'both paths consume the same prepared physical face');
+    assert.match(fallback, /"Missing Source", "Host Test"/, 'the original candidate chain is preserved');
+  } finally { await f.dispose(); }
+});
+
+test('일반 글리프 대체도 준비한 프로그램의 별칭을 선언 순서로 소비한다', async () => {
+  const f = await fixture();
+  try {
+    const snapshot = await f.provider.getSnapshot();
+    const second = { ...snapshot.faces[0], id: 'fallback', family: 'Fallback Test',
+      fullName: 'Fallback Test Italic', postscriptName: 'FallbackTest-Italic' };
+    await setHostFontProvider({ ...f.provider,
+      getSnapshot: async () => ({ revision: 'two-faces', faces: [...snapshot.faces, second] }) });
+    await f.session.prepare([...f.records(), resolveRendererLocalFont('Fallback Test', { weight: 400, slant: 'italic' })!]);
+    const resolve = (family: string) => withHostCanvasFonts(f.session,
+      () => scopedHostCanvasFont(`italic 20px ${family}`))!.replace(/^italic 20px /, '');
+    const firstAlias = resolve('"Host Test"').split(',')[0];
+    const secondAlias = resolve('"Fallback Test"').split(',')[0];
+    assert.notEqual(firstAlias, secondAlias);
+    assert.ok(resolve('"Host Test", "Fallback Test"').startsWith(`${firstAlias}, ${secondAlias}`));
+    assert.ok(resolve('"Fallback Test", "Host Test"').startsWith(`${secondAlias}, ${firstAlias}`));
+  } finally { await f.dispose(); }
+});
+
 test('late FontFace.load cannot register after a document reset, even if bytes were already read', async () => {
   const f = await fixture();
   try {
@@ -62,6 +174,30 @@ test('late FontFace.load cannot register after a document reset, even if bytes w
     assert.equal(f.fonts.size, 0);
     f.session.reset(); waiting.resolve(); await preparing;
     assert.equal(f.fonts.size, 0);
+  } finally { await f.dispose(); }
+});
+
+test('host 글꼴의 누락 글리프를 위해 준비한 뒤쪽 후보도 같은 순서로 전달한다', async () => {
+  const f = await fixture();
+  try {
+    const snapshot = await f.provider.getSnapshot();
+    await setHostFontProvider({ ...f.provider, async getSnapshot() {
+      return { revision: 'fallback-chain', faces: [...snapshot.faces, {
+        id: 'fallback', family: 'Host Fallback', fullName: 'Host Fallback Italic',
+        postscriptName: 'HostFallback-Italic', style: 'Italic', weight: 400, slant: 'italic' as const,
+      }] };
+    } });
+    const style = { weight: 400, slant: 'italic' as const };
+    await f.session.prepare(['Host Test', 'Host Fallback'].map(name => resolveRendererLocalFont(name, style)!));
+    const resolve = (families: string) => withHostCanvasFonts(f.session,
+      () => scopedHostCanvasFont(`italic 20px ${families}`))!;
+    const primary = resolve('"Host Test"').split(',')[0];
+    const fallback = resolve('"Host Fallback"').split(',')[0].replace('italic 20px ', '');
+    const chain = resolve('"Host Test", "Host Fallback", serif');
+    assert(chain.startsWith(primary), '주 글꼴의 선택과 스타일을 유지한다');
+    assert(chain.includes(fallback), '첫 글꼴에 없는 글리프를 뒤쪽의 실제 공급 face가 표시할 수 있어야 한다');
+    assert(chain.indexOf(fallback) < chain.indexOf('"Host Test"'), '준비한 물리 face는 기존 표시 후보보다 먼저 전달한다');
+    assert.match(chain, /"Host Test", "Host Fallback", serif$/, '원래 후보 체인도 보존한다');
   } finally { await f.dispose(); }
 });
 
@@ -79,5 +215,147 @@ test('failed loads are bounded within a generation and retry after replacement',
     const previous = [...f.fonts][0];
     f.changed();
     assert(!f.fonts.has(previous), 'notification immediately releases old faces');
+  } finally { await f.dispose(); }
+});
+
+
+test('opt-in outlines live only during their page paint and are cleared on errors', async () => {
+  const f = await fixture();
+  const file = readFileSync(new URL('../../tests/fixtures/fonts/RHWPHftOutline.otf', import.meta.url));
+  const bytes = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
+  const families = ['First page', 'Second page'];
+  try {
+    await setHostFontProvider({ ...f.provider,
+      async getSnapshot() { return { revision: 'pages', faces: families.map(family => ({
+        id: family, family, fullName: family, postscriptName: family,
+        style: 'Regular', weight: 400, slant: 'normal' as const,
+      })) }; },
+      async readFace() { return { bytes }; },
+    }, { layout: true });
+    const records = families.map(family => resolveRendererLocalFont(family)!);
+    const active = new Set<string>();
+    let coverage = 0;
+    let fail = false;
+    const owner = {
+      registerTextFontGlyphCoverage() { coverage++; },
+      registerHftOutlineFont() { assert.fail('whole-document outline registration'); },
+      registerHftOutlineFontFaces(family: string, programs: Array<{ bytes: Uint8Array; faceIndex: number }>) {
+        assert.deepEqual(programs[0].bytes, new Uint8Array(bytes));
+        assert.equal(programs[0].faceIndex, 0);
+        active.add(family);
+        if (fail) throw new Error('resource rejection');
+      },
+      clearTextFontOutline(family: string) { active.delete(family); },
+    };
+    await f.session.prepare(records, owner, () => true, true);
+    assert.equal(active.size, 0);
+    const preparedCoverage = coverage;
+    for (const record of records) {
+      f.session.withPageOutlines([record], owner, () => {
+        assert(active.has(record.family));
+        assert(!active.has(families.find(family => family !== record.family)!));
+      });
+      assert.equal(active.size, 0);
+    }
+    assert.throws(() => f.session.withPageOutlines([records[0]], owner, () => {
+      throw new Error('paint rejection');
+    }), /paint rejection/);
+    assert.equal(active.size, 0);
+    fail = true;
+    assert.throws(() => f.session.withPageOutlines([records[1]], owner, () => {}), /resource rejection/);
+    assert.equal(active.size, 0);
+    assert.equal(coverage, preparedCoverage, 'paint scopes must not rebuild measurement coverage');
+  } finally { await f.dispose(); }
+});
+
+test('Print의 주 프로그램은 실제 descriptor와 같은 순서를 쓰고 paint 뒤 해제한다', async () => {
+  const f = await fixture();
+  const data = (name: string) => Uint8Array.from(readFileSync(
+    new URL(`../../tests/fixtures/fonts/${name}`, import.meta.url))).buffer;
+  const ttf = data('RHWPHostFixture-Regular.ttf'), cff = data('RHWPHftOutline.otf');
+  const faces = ['TTF', 'CFF'].map(id => ({ id, family: 'Print Mixed', fullName: id,
+    postscriptName: id, style: 'Regular', weight: 400, slant: 'normal' as const }));
+  try {
+    await setHostFontProvider({ ...f.provider,
+      async getSnapshot() { return { revision: 'print-mixed', faces }; },
+      async readFace(id) { return { bytes: id === 'TTF' ? ttf : cff }; },
+    }, { layout: true });
+    const records = resolveRendererLocalFontCandidates('Print Mixed', { weight: 400, slant: 'normal' });
+    const active = new Map<string, { bytes: Uint8Array; complete: boolean }>();
+    const owner = {
+      registerHftOutlineFontFaces() {}, clearTextFontOutline() {},
+      registerPrintFontPrimary(family: string, bytes: Uint8Array, index: number, complete: boolean) {
+        assert.equal(index, 0); active.set(family, { bytes, complete });
+      },
+      clearPrintFontPrimary(family: string) { active.delete(family); },
+    };
+    await f.session.prepare(records, owner, () => true, true);
+    assert.equal(active.size, 0, '비동기 준비가 Print paint를 활성화하지 않는다');
+    const inspect = () => {
+      assert.deepEqual(active.get('Print Mixed')?.bytes, new Uint8Array(cff));
+      assert.deepEqual(active.get('__rhwp_ttf__Print Mixed')?.bytes, new Uint8Array(ttf));
+      assert.equal(active.get('Print Mixed')?.complete, false, '혼합 family의 결측을 완전하다고 선언하지 않는다');
+      assert.equal(active.get('__rhwp_ttf__Print Mixed')?.complete, false);
+    };
+    f.session.withPageOutlines(records, owner, inspect);
+    assert.equal(active.size, 0);
+    assert.throws(() => f.session.withPageOutlines(records, owner, () => {
+      inspect(); throw new Error('paint rejection');
+    }), /paint rejection/);
+    assert.equal(active.size, 0, '실패한 paint도 등록을 남기지 않는다');
+  } finally { await f.dispose(); }
+});
+
+test('unicode-range로 제한된 TTF는 원 cmap으로 Print 소유를 확대하지 않는다', async () => {
+  const font = Uint8Array.from(readFileSync(new URL(
+    '../../tests/fixtures/fonts/RHWPHostFixture-Regular.ttf', import.meta.url))).buffer;
+  const f = await fixture(() => 'U+41-5A', font);
+  try {
+    await setHostFontProvider({ ...f.provider, async getSnapshot() {
+      return { revision: 'restricted-print', faces: [{ id: 'normal', family: 'Restricted Print',
+        fullName: 'Restricted Print', postscriptName: 'RestrictedPrint', style: 'Regular',
+        weight: 400, slant: 'normal' as const }] };
+    } }, { layout: true });
+    const records = resolveRendererLocalFontCandidates('Restricted Print', { weight: 400, slant: 'normal' });
+    assert.equal(records.length, 1, '실제 제한 프로그램을 준비한 상태에서 검사한다');
+    const owner = {
+      registerHftOutlineFontFaces() {}, clearTextFontOutline() {},
+      getFontSymbolUnicodeRange() { return ''; },
+      registerPrintFontPrimary() { assert.fail('제한된 FontFace의 원 cmap을 공급하면 안 된다'); },
+      clearPrintFontPrimary() { assert.fail('등록하지 않은 family를 해제하지 않는다'); },
+    };
+    await f.session.prepare(records, owner, () => true, true);
+    f.session.withPageOutlines(records, owner, () => {});
+  } finally { await f.dispose(); }
+});
+
+test('공통 검사기의 빈 기호 제외 범위는 일반 TTF 글자를 Print 공급에서 빼지 않는다', async () => {
+  const bytes = Uint8Array.from(readFileSync(new URL(
+    '../../tests/fixtures/fonts/RHWPHostFixture-Regular.ttf', import.meta.url))).buffer;
+  const range = 'U+0-FFFB,U+FFFD-10FFFF';
+  const f = await fixture(() => range, bytes);
+  try {
+    await setHostFontProvider({ ...f.provider, async getSnapshot() {
+      return { revision: 'shared-symbol-range', faces: [{ id: 'normal', family: 'Shared Range',
+        fullName: 'Shared Range', postscriptName: 'SharedRange', style: 'Regular',
+        weight: 400, slant: 'normal' as const }] };
+    } }, { layout: true });
+    const records = resolveRendererLocalFontCandidates('Shared Range', { weight: 400, slant: 'normal' });
+    assert.equal(records.length, 1);
+    const active = new Set<string>();
+    const owner = {
+      registerHftOutlineFontFaces() {}, clearTextFontOutline() {},
+      getFontSymbolUnicodeRange(program: Uint8Array) {
+        assert.deepEqual(program, new Uint8Array(bytes)); return range;
+      },
+      registerPrintFontPrimary(family: string) { active.add(family); },
+      clearPrintFontPrimary(family: string) { active.delete(family); },
+    };
+    await f.session.prepare(records, owner, () => true, true);
+    f.session.withPageOutlines(records, owner, () => {
+      assert(active.has('Shared Range'));
+      assert(active.has('__rhwp_ttf__Shared Range'));
+    });
+    assert.equal(active.size, 0);
   } finally { await f.dispose(); }
 });

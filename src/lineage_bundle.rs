@@ -102,7 +102,7 @@ pub fn read_all(bundle_path: &str) -> Result<std::collections::BTreeMap<String, 
         }
         let name = entry
             .name()
-            .map_err(|e| format!("zip 항목 이름 해석 실패: {e}"))?
+            .map_err(|error| format!("zip 항목 이름 읽기 실패: {error}"))?
             .replace('\\', "/");
         let mut bytes = Vec::with_capacity(entry.size() as usize);
         entry

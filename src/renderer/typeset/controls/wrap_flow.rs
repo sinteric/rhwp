@@ -41,8 +41,23 @@ pub(in crate::renderer::typeset) fn place(
             // [#6175] 유도 밴드의 앵커는 묶음(GroupShape)일 수 있다 — 개체
             // 종류로 흡수/통과를 가르는 이 판정에서 묶음 그림을 표로 오인하면
             // 밴드 옆 본문 문단이 통째로 흡수된다.
-            if anchor_is_picture || st.following_wrap_is_derived() {
-                let anchor = wrap_match::picture_anchor(paragraphs, band);
+            // 절대 위치 표 뒤의 닫힌 빈 줄은 본문 흐름이다. 문단 상대 표도
+            // 실제 현재 펜에서 시작하는 닫힌 저장 줄 묶음은 아직 소비하지 않았다.
+            // 탭만 있다는 이유로 이를 높이 없는 안내 표시로 흡수하지 않는다.
+            // 이미 예약한 표 프레임이나 불연속·편집 사다리는 이 증거를 대신하지 못한다.
+            let profile = engine.profile.get();
+            let stored_empty_body_flow = is_empty_para
+                && (wrap_match::anchor_table_has_absolute_frame(paragraphs, band)
+                    || st.stored_wrap_rows_start_at_flow_pen(para, engine.dpi))
+                && (profile.hwp5_stored_pagination_layout() || profile.hwpx_stored_layout())
+                && !profile.session_edited()
+                && !engine.uniform_filler_ladder.get()
+                && !st.vpos_ladder_dirty
+                && crate::renderer::float_placement::stored_empty_line_has_closed_source_box(
+                    paragraphs, para_idx,
+                );
+            if anchor_is_picture || st.following_wrap_is_derived() || stored_empty_body_flow {
+                let anchor = wrap_match::picture_anchor(band);
                 st.register_following_wrap_anchor(para_idx, anchor);
             } else {
                 // Table anchor: 어울림 문단을 표 옆에 기록 + height 소비 없음.
@@ -52,6 +67,7 @@ pub(in crate::renderer::typeset) fn place(
                 // 통째로 페이지 흐름에서 누락된다. 이 경우 wrap zone 을 종료하고
                 // 일반 텍스트 배치로 폴백한다 (LINE_SEG cs/sw 가 이미 wrap 형상을
                 // 인코딩하므로 layout 이 첫 줄을 표 옆에, 나머지를 표 아래에 렌더).
+
                 if let Some(absorption) = wrap_absorption::whole_paragraph(
                     para,
                     paragraphs,
@@ -73,8 +89,8 @@ pub(in crate::renderer::typeset) fn place(
                 let wrap_prefix_len = prefix.len;
                 let col_width = st.following_wrap_column_width();
                 let formatted = engine.format_paragraph(para, composed, styles, Some(col_width));
-                if let Some(suffix_height) = prefix.suffix_height(para, &formatted, is_empty_para) {
-                    if suffix_height <= st.available_height() + 0.5 {
+                if let Some(suffix) = prefix.suffix_metrics(para, &formatted, is_empty_para) {
+                    if suffix.content_height <= st.available_height() + 0.5 {
                         let absorption = wrap_absorption::prefix(
                             para,
                             paragraphs,
@@ -85,14 +101,16 @@ pub(in crate::renderer::typeset) fn place(
                         );
                         st.commit_wrap_absorption(absorption);
                         st.end_following_wrap();
-                        if st.wrap_tail_needs_advance(suffix_height) {
+                        if st.wrap_tail_needs_advance(suffix.content_height) {
                             st.advance_column_or_new_page();
                         }
                         st.commit_wrap_tail(
                             para_idx,
                             wrap_prefix_len,
                             formatted.line_count(),
-                            suffix_height,
+                            suffix.advance,
+                            suffix.content_height,
+                            formatted.line_tail_spacing(formatted.line_count()),
                         );
                         return true;
                     }
@@ -105,20 +123,27 @@ pub(in crate::renderer::typeset) fn place(
                             == 0
                     })
                 {
-                    st.register_following_wrap_anchor(
-                        para_idx,
-                        wrap_match::picture_anchor(paragraphs, band),
-                    );
+                    st.register_following_wrap_anchor(para_idx, wrap_match::picture_anchor(band));
                 }
                 // 이 문단은 첫 줄만 Square 띠에 있고 나머지는 표 아래 전폭으로
                 // 복귀한다. 일반 fit 전에 띠 바닥을 흐름 하한으로 반영하지 않으면
                 // 아래 줄이 표와 겹치는 높이를 아직 사용할 수 있다고 오판한다.
-                st.end_following_wrap();
+                st.end_following_wrap_before(para_idx);
                 // fall through → 일반 paragraph 배치
             }
+        } else if let Some(pen) = unstored_lane_text(para, is_empty_para)
+            .then(|| st.square_band_lane_pen())
+            .flatten()
+        {
+            // 저장 줄 없이 rhwp 가 전폭으로 합성한 줄만 가진 문단은 차선 증거가 없다.
+            // 한/글은 이 문단을 표 옆 차선에서 이어 흘린다(36458608 pi=10~13: 뒤 저장
+            // 문단 pi=14 의 vpos 가 차선 높이를 그대로 누적한다). 앞 흡수 문단의 끝에서
+            // 시작해 자기 높이를 소비하고, 밴드는 닫지 않는다.
+            st.start_paragraph_at_band_pen(para_idx, pen);
+            st.register_following_wrap_anchor(para_idx, wrap_match::picture_anchor(band));
         } else {
             // 매칭 실패 → wrap zone 종료, 정상 처리 진행
-            st.end_following_wrap();
+            st.end_following_wrap_before(para_idx);
             // [Task #741 Stage 4] 매칭 실패 paragraph 의 vpos=0 hint (page break 의도)
             // 발견 시 advance_column_or_new_page. wrap_around active 종료 후 추가 가드.
             // hwp3-sample10-hwp5.hwp paragraph 26 ("● 제목차례 ●") case —
@@ -136,4 +161,15 @@ pub(in crate::renderer::typeset) fn place(
         }
     }
     false
+}
+
+/// 합성 줄만 가진(저장 줄이 없는) 개체 없는 본문 문단인가.
+fn unstored_lane_text(para: &Paragraph, is_empty_para: bool) -> bool {
+    !is_empty_para
+        && para.controls.is_empty()
+        && !para.line_segs.is_empty()
+        && para
+            .line_segs
+            .iter()
+            .all(crate::renderer::typeset::is_synthetic_line_seg)
 }

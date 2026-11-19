@@ -2,7 +2,7 @@
 kind: reference
 status: active
 canonical: mydocs/tech/owpml_conformance_observations.md
-last_verified: 2026-08-18
+last_verified: 2026-11-12
 ---
 
 # HWP/OWPML 정합 관찰 노트
@@ -93,10 +93,14 @@ last_verified: 2026-08-18
 
 ## 10. HWPX `hatchStyle` 생략 = 무늬없음(`-1`) — HWP 쪽 sentinel과의 비대칭
 
-- **관찰**: HWP 쪽 `pattern_type`은 `-1`이 무늬없음이고 1~6이 OWPML 스키마의 6개 `hatchStyle`
-  값에 대응한다. HWPX에서 `hatchStyle`이 생략되면 "무늬없음"으로 저장해야 하므로 호출자는
-  기본값으로 `-1`을 명시적으로 써야 한다 — 단순 `unwrap_or(0)` 등은 0번째 무늬로 오염된다.
-- **근거**: `src/parser/hwpx/utils.rs:121-126`.
+- **관찰**: HWP 쪽 `pattern_type`은 `-1`이 무늬없음이고 0~5가 무늬다. 한글 2024가 HWP를
+  HWPX로 저장하면 0 `HORIZONTAL`, 1 `VERTICAL`, 2 `SLASH`, 3 `BACK_SLASH`, 4 `CROSS`,
+  5 `CROSS_DIAGONAL`이며 무늬없음과 6은 `hatchStyle`을 생략한다. HWPX에서 `hatchStyle`이
+  생략되면 "무늬없음"으로 저장해야 하므로 호출자는 기본값으로 `-1`을 명시적으로 써야 한다 —
+  단순 `unwrap_or(0)` 등은 0번 무늬(가로줄)로 오염된다.
+- **이름과 모양**: 스키마 주석은 `BACK_SLASH`를 `\\\\\`, `SLASH`를 `/////`로 적지만 한글은
+  `SLASH`(HWP 2)를 ＼, `BACK_SLASH`(HWP 3)를 ／로 그린다. 이름이 아니라 위 대응을 따른다.
+- **근거**: `src/model/style.rs`의 `HatchStyle`, [정오표 40](hwp_spec_errata.md#40-채우기-무늬-종류-표-29--0부터-시작) (#8978).
 
 ## 11. 용지 방향 — OWPML `landscape` 값이 이름과 반대로 매핑됨
 
@@ -165,6 +169,20 @@ last_verified: 2026-08-18
   (계측: `mydocs/working/task_m100_4161_stage1.md`).
 
 ---
+
+## 18. 곡선의 점-대-점 체인과 구간 종류
+
+- **관찰 (2026-10-24, 이슈 #8153)**: 편람 HWP의 5.1.1.0 `SHAPE_COMPONENT_CURVE`는
+  세 점과 구간 종류 두 개 `[1,1]`을 기록한다. 같은 HWPX의 `hp:curve`는 같은 좌표를
+  잇는 `hp:seg type="CURVE"` 두 개다. 구간 종류는 각 점 쌍의 속성이며 별도의 베지어
+  제어점 두 개가 XML에 추가되는 구조가 아니다.
+- **근거**: 원본·SHA·원시 레코드와 한컴 별도 저장본은
+  [정오표 §36](hwp_spec_errata.md#36-shape_component_curve-표-103--점-개수좌표-배열후행-필드)에 있다.
+  해당 절은 HWP 저장 구조 오류를 정정하며 보간식을 공식 규칙으로 추가하지 않는다.
+- **구현 경계**: 저장기의 `hp:seg` 체인은 PR #4684가 한컴 열기 크래시를 해결한 계약이다.
+  체인 형식을 보존하면서 LINE/CURVE 종류도 보존해야 한다. 타입 1을 베지어 제어점 세 점씩으로
+  소비하는 렌더러 때문에 HWPX 타입을 버리는 것으로 대신하지 않는다. 실제 보간과 기존 기대값의
+  정리는 원본 두 형식·독립 Print·정상 대조군 검증을 마친 후 판정한다.
 
 ## 이 문서가 하지 않는 것
 

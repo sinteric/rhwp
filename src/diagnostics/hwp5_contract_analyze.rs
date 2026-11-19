@@ -755,7 +755,7 @@ fn summarize_hwpx_xml(bytes: &[u8]) -> Result<HwpxXmlSummary, String> {
             .map_err(|error| format!("HWPX entry 열기 실패: {error}"))?;
         let name = file
             .name()
-            .map_err(|error| format!("HWPX entry 이름 해석 실패: {error}"))?
+            .map_err(|error| format!("HWPX entry 이름 읽기 실패: {error}"))?
             .into_owned();
         if name.starts_with("BinData/") {
             summary.bindata_files += 1;

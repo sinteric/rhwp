@@ -30,6 +30,96 @@ pub const FONT_PATH_ENV: &str = "RHWP_FONT_PATH";
 
 /// 저장소 번들 오픈소스 폰트 — 최후 폴백(#2293 한국어 드롭 방지).
 pub const BUNDLED_OPENSOURCE_DIR: &str = "ttfs/opensource";
+/// Native 글꼴의 **힙 복사본** 총량 상한. 바이트로 직접 공급한 snapshot
+/// (`TypefaceCatalog::try_from_data`)과 CoreText 가 거부한 TTC face 를 따로
+/// 꾸린 복사본에 적용한다. 경로로 받은 파일은 복사하지 않고 파일 매핑을
+/// face 끼리 공유하므로 이 총량에 들어가지 않는다(#8597).
+pub(crate) const MAX_NATIVE_CUSTOM_FONT_BYTES: u64 = 64 * 1024 * 1024;
+/// 경로 적재에서 받아들이는 글꼴 파일 수 상한.
+pub(crate) const MAX_NATIVE_CUSTOM_FONT_FILES: usize = 256;
+/// 경로 적재에서 받아들이는 글꼴 파일 하나의 크기 상한.
+pub(crate) const MAX_NATIVE_CUSTOM_FONT_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// 경로 적재가 받아들이지 않은 글꼴 파일과 그 이유.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SkippedNativeFontFile {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
+/// 경로 적재가 실제로 읽을 글꼴 파일 목록. 공급 경로 순서를 보존하며
+/// (`sources[i]` ↔ `files[i]`), 같은 파일은 처음 나온 곳에서만 읽는다.
+#[derive(Debug, Default)]
+pub(crate) struct NativeCustomFontScan {
+    pub files: Vec<Vec<PathBuf>>,
+    pub skipped: Vec<SkippedNativeFontFile>,
+}
+
+/// Native custom 글꼴 경로 적재의 파일 선택 규칙 — skia 카탈로그와 웹폰트
+/// 공급 판정이 함께 쓴다. 디렉터리는 한 단계만 읽고 파일명 순으로 정렬하며,
+/// `ttf`·`otf`·`ttc` 만 받는다. 파일 수·파일 크기 상한을 넘는 파일은 이유와
+/// 함께 `skipped` 에 남긴다(#8597: 예전에는 말없이 건너뛰었다).
+pub(crate) fn scan_native_custom_font_files(sources: &[PathBuf]) -> NativeCustomFontScan {
+    let mut scan = NativeCustomFontScan::default();
+    let mut seen = std::collections::HashSet::new();
+    let mut accepted = 0usize;
+    for source in sources {
+        let mut paths = if source.is_file() {
+            vec![source.clone()]
+        } else {
+            std::fs::read_dir(source)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|entry| entry.path())
+                .collect::<Vec<_>>()
+        };
+        paths.sort();
+        let mut files = Vec::new();
+        for path in paths {
+            let supported = path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| {
+                    matches!(
+                        extension.to_ascii_lowercase().as_str(),
+                        "ttf" | "otf" | "ttc"
+                    )
+                });
+            if !supported || !seen.insert(path.clone()) {
+                continue;
+            }
+            let Ok(metadata) = path.metadata() else {
+                continue;
+            };
+            if !metadata.is_file() || metadata.len() == 0 {
+                continue;
+            }
+            let reason = if metadata.len() > MAX_NATIVE_CUSTOM_FONT_FILE_BYTES {
+                Some(format!(
+                    "파일 크기 {} 바이트가 상한 {} 바이트를 넘음",
+                    metadata.len(),
+                    MAX_NATIVE_CUSTOM_FONT_FILE_BYTES
+                ))
+            } else if accepted >= MAX_NATIVE_CUSTOM_FONT_FILES {
+                Some(format!(
+                    "글꼴 파일 수 상한 {MAX_NATIVE_CUSTOM_FONT_FILES} 개를 넘음"
+                ))
+            } else {
+                None
+            };
+            match reason {
+                Some(reason) => scan.skipped.push(SkippedNativeFontFile { path, reason }),
+                None => {
+                    accepted += 1;
+                    files.push(path);
+                }
+            }
+        }
+        scan.files.push(files);
+    }
+    scan
+}
 
 /// `RHWP_FONT_PATH` 를 읽어 경로 목록으로 나눈다.
 ///
@@ -75,10 +165,27 @@ pub fn system_font_dirs() -> Vec<PathBuf> {
     }
     #[cfg(target_os = "linux")]
     {
-        vec![
+        // Fontconfig이 사용하는 사용자 설치 위치도 복구 검색에 포함한다.
+        // Skia가 영문 대표 이름만 열거한 글꼴의 현지화 family를 찾을 때 필요하다.
+        let mut dirs = Vec::new();
+        let home = std::env::var_os("HOME")
+            .filter(|home| !home.is_empty())
+            .map(PathBuf::from);
+        let data_home = std::env::var_os("XDG_DATA_HOME")
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|home| home.join(".local/share")));
+        if let Some(data_home) = data_home {
+            dirs.push(data_home.join("fonts"));
+        }
+        if let Some(home) = home {
+            dirs.push(home.join(".fonts"));
+        }
+        dirs.extend([
             PathBuf::from("/usr/share/fonts"),
             PathBuf::from("/usr/local/share/fonts"),
-        ]
+        ]);
+        dirs
     }
     #[cfg(target_os = "windows")]
     {
@@ -104,13 +211,12 @@ pub fn search_dirs(extra: &[PathBuf]) -> Vec<PathBuf> {
 
 /// custom typeface 로더(skia `with_font_paths`)용 디렉터리 — **시스템·번들 제외**.
 ///
-/// skia 의 custom 로더는 family 당 typeface 1개만 담아 굵기(스타일) 변형을
-/// 표현하지 못하고, 해석 체인에서 시스템 매칭보다 앞선다(#2864 이전 필드
-/// 검증 의미론). 그래서 여기에는 사용자가 의도한 폰트(호출자 지정 → 환경
-/// 변수)만 담는다:
-/// - 시스템 디렉터리를 넣으면 regular 파일이 family 를 선점해 bold run 이
-///   전부 regular 로 렌더된다(#3300) — 시스템 폰트는
-///   `FontMgr::match_family_style`(정상 스타일 매칭)이 담당한다.
+/// custom 로더는 이제 collection 의 모든 bounded face와 family별 스타일
+/// 후보를 보존하지만, 해석 체인에서 시스템 매칭보다 앞선다는 계약은 같다.
+/// 그래서 여기에는 사용자가 의도한 폰트(호출자 지정 → 환경 변수)만 담는다:
+/// - 시스템 폰트는 `FontMgr::match_family_style`이 담당한다. 시스템 디렉터리를
+///   custom inventory로 다시 읽어 명시적인 사용자 폰트처럼 우선하지 않는다.
+///   예전 single-face 로더의 regular 선점 문제(#3300)도 이 경계의 근거다.
 /// - 번들 opensource 를 넣으면 깊은 폴백(Noto Sans KR)이 시스템 1순위를
 ///   제치고 선점된다(#3300, r23 발산 −6.9pp) — 번들은 별도 최후-폴백 로더
 ///   (`bundled_font_dirs`)로 체인 말미에만 선다.
@@ -125,6 +231,46 @@ pub fn custom_font_dirs(extra: &[PathBuf]) -> Vec<PathBuf> {
 /// 뒤(최후)에만 선다(#3300).
 pub fn bundled_font_dirs() -> Vec<PathBuf> {
     vec![PathBuf::from(BUNDLED_OPENSOURCE_DIR)]
+}
+
+/// fontdb가 ID 16 우선으로 생략한 ID 1·21의 실제 가족 이름을 보존한다.
+/// 기존 face·스타일·우선순위는 그대로 두고 같은 source/index를 가리키는
+/// 이름 뷰만 추가한다. Full Name(ID 4)·PostScript(ID 6)는 가족으로 승격하지 않는다.
+pub(crate) fn retain_fontdb_family_aliases(database: &mut usvg::fontdb::Database) {
+    let aliases: Vec<_> = database
+        .faces()
+        .filter_map(|info| {
+            let families = database.with_face_data(info.id, |bytes, index| {
+                let face = ttf_parser::Face::parse(bytes, index).ok()?;
+                let mut families = Vec::new();
+                for record in face.names() {
+                    if !matches!(
+                        record.name_id,
+                        ttf_parser::name_id::FAMILY | ttf_parser::name_id::WWS_FAMILY
+                    ) {
+                        continue;
+                    }
+                    let Some(name) = record.to_string() else {
+                        continue;
+                    };
+                    let name = name.trim();
+                    if !name.is_empty()
+                        && !info.families.iter().any(|(known, _)| known == name)
+                        && !families.iter().any(|(known, _)| known == name)
+                    {
+                        families.push((name.to_owned(), record.language()));
+                    }
+                }
+                (!families.is_empty()).then_some(families)
+            })??;
+            let mut alias = info.clone();
+            alias.families = families;
+            Some(alias)
+        })
+        .collect();
+    for alias in aliases {
+        database.push_face_info(alias);
+    }
 }
 
 /// `fontdb` 에 조달 순서대로 폰트를 적재한다.
@@ -213,6 +359,22 @@ mod tests {
             Some(&PathBuf::from(BUNDLED_OPENSOURCE_DIR)),
             "번들 오픈소스 폰트가 최후 폴백이어야 한다"
         );
+        #[cfg(target_os = "linux")]
+        {
+            let home = std::env::var_os("HOME")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from);
+            let data_home = std::env::var_os("XDG_DATA_HOME")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from)
+                .or_else(|| home.as_ref().map(|path| path.join(".local/share")));
+            if let Some(data_home) = data_home {
+                assert!(dirs.contains(&data_home.join("fonts")));
+            }
+            if let Some(home) = home {
+                assert!(dirs.contains(&home.join(".fonts")));
+            }
+        }
         #[cfg(target_os = "macos")]
         if let Some(home) = std::env::var_os("HOME").filter(|home| !home.is_empty()) {
             let user_dir = PathBuf::from(home).join("Library/Fonts");
@@ -251,7 +413,7 @@ mod tests {
     }
 
     /// [#3300] custom 로더 목록은 시스템·번들을 포함하면 안 된다.
-    /// - 시스템: family 당 1 typeface 라 굵기 변형 소실(regular 선점)
+    /// - 시스템: 사용자 지정 inventory로 승격하지 않고 FontMgr의 스타일 매칭에 위임
     /// - 번들: 깊은 폴백(Noto)이 시스템 1순위를 제치고 본문을 렌더(r23 −6.9pp)
     #[test]
     fn custom_font_dirs_excludes_system_and_bundled() {

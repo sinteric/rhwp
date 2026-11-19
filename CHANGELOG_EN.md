@@ -6,6 +6,149 @@ This document records the major changes of the rhwp project.
 
 ## [Unreleased]
 
+## [0.9.1] — Release preparation
+
+This candidate improves table, paragraph, font and round-trip fidelity, clipboard handling, small-screen dialogs, Native host foundations and release validation. Publication remains channel-specific.
+
+### Layout, editing and round trips
+
+- Correct first-line, continuation and terminal fragments of nested tables; preserve cell pictures/shapes and the content that follows tables ([#8984](https://github.com/edwardkim/rhwp/pull/8984), [#9066](https://github.com/edwardkim/rhwp/pull/9066), [#9069](https://github.com/edwardkim/rhwp/pull/9069), [#9106](https://github.com/edwardkim/rhwp/pull/9106)).
+- Improve saved lines, empty paragraphs, headers/footers, master pages, equation symbols and actual font-program selection. Existing document differences remain; this is not a claim of complete typesetting fidelity ([#9074](https://github.com/edwardkim/rhwp/pull/9074), [#9083](https://github.com/edwardkim/rhwp/pull/9083), [#9096](https://github.com/edwardkim/rhwp/pull/9096), [#9106](https://github.com/edwardkim/rhwp/pull/9106)).
+- Preserve HTML table borders, vertical alignment and repeated saves; retain numbering/bullet character styles ([#9017](https://github.com/edwardkim/rhwp/pull/9017), [#9140](https://github.com/edwardkim/rhwp/pull/9140)).
+- Keep About and shared dialogs usable in small viewports and at higher zoom ([#9092](https://github.com/edwardkim/rhwp/pull/9092), [#9136](https://github.com/edwardkim/rhwp/pull/9136)).
+
+- Recollect host font requests only for the edited Canvas2D page when document, font and pagination state remain valid; preserve full discovery after other changes ([#9168](https://github.com/edwardkim/rhwp/pull/9168)).
+
+- Report automatic HWP download opening as complete after the initial page is painted, including font-preparation races ([#9170](https://github.com/edwardkim/rhwp/pull/9170)).
+
+- Preserve HWP3 picture ownership across saved page breaks and recover native font programs while preserving the original TTF/TTC preference ([#9157](https://github.com/edwardkim/rhwp/pull/9157)). Release preparation completed the full 18-document Native/fresh WASM protected verification.
+- Handle Chrome settings-channel closure during worker suspension without enabling badges or preview before settings are available.
+
+- Track pending document opens through completion, failure and replacement so startup blank/recovery work cannot supersede an immediate SDK load. Preserve first-page completion and cancellation behavior.
+
+### PDF, CLI, Native hosts and release tooling
+
+- Parse PDF ToUnicode range tokens and comments correctly. Existing PDF onboarding covers passwords, page selection, resource policies and Worker ownership ([#8922](https://github.com/edwardkim/rhwp/pull/8922)).
+- Extend picture/shape CLI editing and Native font diagnostics ([#9052](https://github.com/edwardkim/rhwp/pull/9052), [#9147](https://github.com/edwardkim/rhwp/pull/9147)).
+- Extend Qt/Flutter Native preview, tiles, multiple pages, cache and lifecycle foundations. Reference and experimental support, including platform validation limits, remains documented in the Native guides; a complete GPU editor on every platform is not promised ([#8809](https://github.com/edwardkim/rhwp/pull/8809), [#9132](https://github.com/edwardkim/rhwp/pull/9132)).
+- Remove PDF body debug output and correct qcms test pointers while retaining security detection rules ([#8884](https://github.com/edwardkim/rhwp/pull/8884)).
+- Pin the Ubuntu 24.04 baseline, check 26.04 compatibility, and separate Fuzz build/run with split code generation. The earlier runner shutdown was not proven to be OOM ([#9155](https://github.com/edwardkim/rhwp/pull/9155)).
+- Replace 13 deprecated Atomic calls while keeping Rust 1.93.1, resource caps, identifier exhaustion and memory ordering.
+
+### Packages and compatibility
+
+Product, npm, VS Code and browser-extension candidates use 0.9.1. Eight changed or dependency-updated crates receive new versions; six unchanged published crates are reused. Published versions remain immutable. The Rust MSRV remains 1.93.1. Publication and independent consumer results are verified in the delivery stage.
+
+### Contributors
+
+The audit covers **1,238 commits** from v0.9.0 through feature source `197ce19e99438c2cba452c654ae1af504dab85ec`, including Git authors, co-authors and original/integration PR evidence. Thank you to **19 people** and Dependabot. The local Atomic cleanup and release metadata are follow-ups by the maintainer already included below.
+
+<!-- release-contributors:v0.9.1:start -->
+- @Bongseop-Kim
+- @chrisryugj
+- @donggyun112
+- @edwardkim
+- @gitprogam
+- @hyunmyungJaneLee
+- @jangster77
+- @jeong-sik
+- @JinHeeWond
+- @JinHo-von-Choi
+- @johndoekim
+- @pblsketch
+- @planet6897
+- @postmelee
+- @puckqook
+- @sacru2red
+- @semanticist21
+- @seo-rii
+- @signspark
+<!-- release-contributors:v0.9.1:end -->
+
+Bot: @dependabot[bot]. See the [public ledger](mydocs/tech/investigations/release-v0.9.1/contributor-ledger.json) for credit evidence and identity decisions.
+
+
+## [0.9.0]
+
+This release introduces PDF import into editable documents, Rust/CLI consumption contracts, and accumulated editing, layout and serialization improvements. See the [GitHub Release](https://github.com/edwardkim/rhwp/releases/tag/v0.9.0) for publication time and distribution artifacts.
+
+### PDF and developer onboarding
+
+- Import PDF into Document IR and save HWP/HWPX via CLI, Rust, WASM or Studio. Select source pages and choose `fidelity` or `editable` layout; inspect table-inference diagnostics ([#7913](https://github.com/edwardkim/rhwp/pull/7913), [#8120](https://github.com/edwardkim/rhwp/pull/8120)).
+- Default JBIG2, JPEG 2000, ICC conversion and bounded xref recovery, request policies, Linux CLI isolation and browser Worker cancellation/recovery ([#8181](https://github.com/edwardkim/rhwp/pull/8181), [#8190](https://github.com/edwardkim/rhwp/pull/8190), [#8360](https://github.com/edwardkim/rhwp/pull/8360)).
+- Pattern images and text outlines, supported curved clipping, rotated text and masks; Standard Security R2–R6 password authentication and source-page/total-page progress ([#8410](https://github.com/edwardkim/rhwp/pull/8410), [#8420](https://github.com/edwardkim/rhwp/pull/8420)).
+- A usable import dialog: selection no longer retains the busy cursor; advanced JSON no longer dominates the default screen ([#8401](https://github.com/edwardkim/rhwp/pull/8401), [#8412](https://github.com/edwardkim/rhwp/pull/8412)).
+- **[PDF developer quick start](mydocs/manual/pdf_developer_onboarding_EN.md)** covers builds, first conversion, passwords, Rust/WASM, Worker hosting, progress and error recovery.
+
+### Editing, layout and round trips
+
+- Corrections to nested/RowBreak tables, stored lines, padding, inline objects, headers/footers, equations and font fallback, integrated with original contributor history and verification evidence.
+- Pictures in table cells and relocation across pages with Undo/Redo, continuous highlighting, nested paragraph formatting, logical editing and multi-column reflow ([#8725](https://github.com/edwardkim/rhwp/pull/8725), [#8379](https://github.com/edwardkim/rhwp/pull/8379), [#8340](https://github.com/edwardkim/rhwp/pull/8340), [#8187](https://github.com/edwardkim/rhwp/pull/8187)).
+- Better preservation of text-box vertical alignment, captions, definition slots, BinData references, pictures and solid fills after saving/reopening ([#8309](https://github.com/edwardkim/rhwp/pull/8309), [#8711](https://github.com/edwardkim/rhwp/pull/8711), [#8738](https://github.com/edwardkim/rhwp/pull/8738)).
+- Preserved container lines, text around inline tables, and header/footer definition slots after HWP/HWPX saving and reopening ([#8741](https://github.com/edwardkim/rhwp/pull/8741)).
+- Reduced large-table lookup and equation/JPEG rendering costs, plus handling for slow/unresponsive web fonts. Performance benefits depend on input and environment.
+
+- Includes cell-shape movement, equation font/original-frame preservation and continued-table corrections merged during release preparation ([#8754](https://github.com/edwardkim/rhwp/pull/8754)).
+- Memo read/insert/update/delete APIs, HWP/HWPX round trips, author/creation-time preservation, and Undo/Redo for anchor-text deletion in Studio. A new memo UI remains separate work ([#8269](https://github.com/edwardkim/rhwp/pull/8269)).
+
+### CLI, packaging and Native hosts
+
+- Sixel and Kitty graphics with document-font guidance ([#7829](https://github.com/edwardkim/rhwp/pull/7829), [#8154](https://github.com/edwardkim/rhwp/pull/8154)). Official CLI archives use `native-skia` and execute a PNG packaging smoke test, addressing its absence from v0.8.7 official archives ([#7818](https://github.com/edwardkim/rhwp/pull/7818)).
+- **crates.io distribution begins with 0.9.0.** Rust developers can add `rhwp = "0.9.0"`; CLI users can install with `cargo install rhwp --version 0.9.0 --locked --bin rhwp` once published. Initial publication and consumption from the public registry are release completion requirements for the 14-package graph, using Rust 1.93.1. Installation becomes available when version 0.9.0 is published to the relevant registry.
+- Native snapshots, tiles, caches and Qt/Flutter host foundations. macOS Metal remains disabled-by-default experimental infrastructure awaiting Apple SDK validation; this is not a claim of a complete cross-platform GPU editor ([#8739](https://github.com/edwardkim/rhwp/pull/8739)).
+- Image insertion in exam ingest and agent/MCP guidance ([#8499](https://github.com/edwardkim/rhwp/pull/8499)).
+- Separated password authentication from diagnostic flows and redacted Debug output without disabling CodeQL. A protected-branch full security scan remains a separate follow-up ([#8750](https://github.com/edwardkim/rhwp/pull/8750)).
+
+### Compatibility and limits
+
+PDF import does not reconstruct every authoring structure or OCR scans. Unsupported clipping, masks, text paint and encryption combinations remain explicit errors. Custom limits only lower profile ceilings. Complete parser heap/RSS bounds are not proven; synchronous APIs require host cancellation/isolation. Imported documents do not inherit the source PDF password.
+
+Other editors may render RHWP text-paint extensions or transparent PNGs differently. Supply actual fonts and verify target-application output. Pin JS/WASM, Workers and hosted Studio together. VS Code retains HWP/HWPX file associations.
+
+### Contributors
+
+The audit covers 4,896 commits after v0.8.7 through the release finalization baseline `41e08ae19e360a32179d851ca2534c1195a8dced`, including authors, co-authors, original PRs and cherry-pick origins. It identifies 33 people and one separately credited bot (Dependabot), with zero unresolved human identities or reference dispositions. Nine unavailable cherry-pick source objects are disclosed; integrated commit authors remain included. Verify that release-record changes after this baseline introduce no uncredited authors.
+
+[Contributor ledger](mydocs/tech/investigations/release-v0.9.0/contributor-ledger.json) · [Identity evidence](mydocs/tech/investigations/release-v0.9.0/contributor-overrides.json)
+
+<!-- release-contributors:v0.9.0:start -->
+- @9ood2s
+- @ashcastle
+- @bellkjtt
+- @chrisryugj
+- @davindev
+- @donggyun112
+- @edwardkim
+- @emptinessform
+- @greenoceanplanet
+- @h1-andro2d
+- @hccgahy1-hub
+- @hexisteme
+- @hyunmyungJaneLee
+- @jangster77
+- @jeong-sik
+- @johndoekim
+- @Kang-T
+- @ldj-diquest
+- @lidge-jun
+- @mytrashcan
+- @oksure
+- @pblsketch
+- @Phantomn
+- @physwkim
+- @planet6897
+- @postmelee
+- @sacru2red
+- @scari
+- @semanticist21
+- @seo-rii
+- @Steveyang8282
+- @studyreadbook4ever
+- @wook8170
+<!-- release-contributors:v0.9.0:end -->
+
+---
+
 ## [0.8.7] — 2026-10-06
 
 > Cumulative PATCH release measured from 2,395 commits and provenance for 230 PRs after v0.8.6 through

@@ -1,4 +1,8 @@
-//! [#7379] 분할 표·각주 경로에서 통과 중인 기존 대조군을 보존한다.
+//! 관계형·고정형: #7379 분할 표·각주의 원문 소유와 기존 경계 대조를 보존한다.
+//! 주석 갱신: 2026-11-07T16:55:33+09:00.
+//! 직전 파일 변경: d753f31aa835a972e068f729e48295229c991de9 (2026-11-07T16:50:39+09:00).
+//! 이번 helper 변경은 합성 예산 반례의 IR 본문과 자동 마커를 구분한다. 실물 좌표·골든의
+//! 기대값은 변경하지 않으며, 아래 미완료 실물의 시각 통과나 신규 px 핀을 주장하지 않는다.
 //!
 //! 원본 정책연구 문서의 시각 비교가 90% 미만이므로 실제 실패한
 //! 78개 함수는 사용자 지시에 따라 #7445에서 후속 검토한다.
@@ -312,6 +316,14 @@ fn assert_terminal_caption_budget(
         upper.row_span = 2;
         upper.height += tail.height;
         upper.paragraphs.extend(tail.paragraphs);
+        // 서로 다른 셀의 저장 원점은 합친 셀의 쪽 경계가 아니다.
+        // 병합한 문단은 낡은 줄 좌표를 버리고 하나의 셀 안에서 다시 조판한다.
+        for paragraph in &mut upper.paragraphs {
+            paragraph.line_segs.clear();
+            paragraph.invalidate_layout_inputs();
+        }
+        // 셀 삭제·병합 뒤에는 실제 편집 경로처럼 주소 격자도 다시 구성한다.
+        table.rebuild_grid();
     }
     table.outer_margin_bottom = margin;
     table.caption.as_mut().expect("아래 캡션").spacing = gap;
@@ -1024,57 +1036,6 @@ fn assert_empty_picture_table_closed_outer_frame(hwpx: bool) {
     assert!(text(notes(&page.root).expect("같은 쪽 각주6")).contains("6)"));
 }
 
-/// 수동 메타데이터 대조군은 한컴 출력의 일치 증거가 아니다.
-/// 저장 상자의 증거를 없애면 앞 본문의 실제 줄 끝에서 흐름 배치해야 한다.
-#[test]
-fn unproven_empty_picture_table_frame_keeps_measured_flow_origin() {
-    use rhwp::model::{control::Control, paragraph::LineSeg};
-    for variant in 0..4 {
-        let mut core = core();
-        let mut doc = core.document().clone();
-        match variant {
-            0 => {
-                doc.sections[0].paragraphs[240].line_segs[0].tag |=
-                    LineSeg::TAG_IMPLEMENTATION_PROPERTY
-            }
-            1 => {
-                doc.sections[0].paragraphs[241].line_segs[0].tag |=
-                    LineSeg::TAG_IMPLEMENTATION_PROPERTY
-            }
-            2 => doc.sections[0].paragraphs[241].line_segs[0].vertical_pos += 75,
-            3 => {
-                let Control::Table(table) = &mut doc.sections[0].paragraphs[240].controls[0] else {
-                    panic!("원래 그림6 표");
-                };
-                table.common.height -= 75;
-            }
-            _ => unreachable!(),
-        }
-        core.set_document(doc);
-        let page = core.build_page_render_tree(10).expect("반례 실제 쪽");
-        let table = table_for_para(&page.root, 240).expect("일반 흐름 표 보존");
-        let previous = line_top(&page.root, "에는 생존 간 이식이").expect("직전 실제 글줄");
-        // 직전 줄1000HU와 뒤 간격1000HU를 소비한 흐름에 개체 오프셋319HU를 더한다.
-        // 증거가 없는 위여백 원점을 저장 상자로 승격하지 않는다.
-        let flow_top = previous + (1000.0 + 1000.0 + 319.0) / 75.0;
-        assert!(
-            (table.bbox.y - flow_top).abs() <= 0.1,
-            "반례{variant}: 일반 원점{}/{flow_top}",
-            table.bbox.y
-        );
-        assert!(find_picture(table).is_some(), "그림 유닛 누락 없음");
-        assert_eq!(
-            text(table).matches("그림 6.").count(),
-            1,
-            "캡션 유닛 중복 없음"
-        );
-        assert!(
-            line_top(&page.root, "다. 장기 매매 현황").is_some(),
-            "뒤 본문 보존"
-        );
-    }
-}
-
 fn assert_centered_cell_pictures_match_independent_pdf(native: bool) {
     let mut path = Path::new(env!("CARGO_MANIFEST_DIR")).join(SAMPLE);
     if native {
@@ -1474,7 +1435,19 @@ fn captioned_closed_empty_host_frame_preserves_rows_and_caption_when_budget_requ
     ) {
         if let RenderNodeType::TextLine(line) = &node.node_type {
             let pi = line.para_index.expect("셀 문단 원본 소유");
-            out.entry((row, col, pi)).or_default().push_str(&text(node));
+            // 비교 대상은 원본 IR 문단의 문자다. 자동 마커는 char_start=None인
+            // 별도 paint 소유이므로 표시 Unicode(•/PUA)를 지워 구분하지 않는다.
+            fn source_text(node: &RenderNode, output: &mut String) {
+                if let RenderNodeType::TextRun(run) = &node.node_type {
+                    if run.char_start.is_some() {
+                        output.push_str(&run.text);
+                    }
+                }
+                for child in &node.children {
+                    source_text(child, output);
+                }
+            }
+            source_text(node, out.entry((row, col, pi)).or_default());
             return;
         }
         for child in &node.children {

@@ -47,6 +47,14 @@ pub fn border_width_mm_str(index: u8) -> &'static str {
         .unwrap_or("0.1")
 }
 
+/// 원본 프로그램이 일반 글리프 폭 외에 지닌 조판 계약.
+/// 파서가 확정하며 렌더러는 컨테이너 형식을 다시 판별하지 않는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum NativeFontProgram {
+    HumanMyeongJo,
+    HanyangSinMyeongJo,
+}
+
 /// 글꼴 정보 (HWPTAG_FACE_NAME)
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Font {
@@ -71,12 +79,17 @@ pub struct Font {
     pub type_info: Option<[u8; 10]>,
     /// 기본 글꼴 이름
     pub default_name: Option<String>,
-    /// 대체 글꼴 (HWPX `<hh:substFont>`) — 원본 글꼴 부재 시 대체될 글꼴 정보.
-    /// HWP5 의 `alt_name`/`alt_type` 과 달리 type·임베드 정보를 독립적으로 보존한다.
+    /// 문서의 명시 대체 글꼴 — 원본 글꼴 부재 시 대체될 글꼴 정보.
+    /// HWP5 FACE_NAME의 대체 이름/별도 유형과 HWPX `<hh:substFont>`를
+    /// 같은 계약으로 전달한다. HWP3 alt_name의 원 이름 추적과는 구분한다.
     pub subst_font: Option<SubstFont>,
+    /// 원본 프로그램의 조판 출처. 문서의 글꼴 선언·자간을 바꾸거나
+    /// 다른 저장 포맷의 원본 속성으로 직렬화하지 않는다.
+    #[serde(skip)]
+    pub native_program: Option<NativeFontProgram>,
 }
 
-/// 대체 글꼴 (HWPX `<hh:substFont>`)
+/// 문서의 명시 대체 글꼴 (HWP5 FACE_NAME / HWPX `<hh:substFont>`)
 ///
 /// 4개 속성을 모두 보존해 라운드트립 무손실을 보장한다. `font_type`/`is_embedded`/
 /// `bin_item_id_ref` 는 부모 `<hh:font>` 의 같은 이름 속성과 독립적이다
@@ -101,6 +114,9 @@ pub struct SubstFont {
 /// 스펙 위반값 0 이 된다(#4141).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CharShape {
+    /// Explicit glyph paint; independent of font weight and advance metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_paint: Option<super::text_paint::TextPaint>,
     /// 원본 레코드 바이트 (라운드트립 보존용, 있으면 직렬화 시 우선 사용)
     pub raw_data: Option<Vec<u8>>,
     /// 언어별 글꼴 ID 참조값 (한글, 영어, 한자, 일어, 기타, 기호, 사용자)
@@ -217,6 +233,7 @@ pub struct CharShape {
 impl Default for CharShape {
     fn default() -> Self {
         Self {
+            text_paint: None,
             raw_data: None,
             font_ids: [0; 7],
             // ↓ 파생값 0 은 OWPML 유효범위 50~200 밖 — positiveInteger 라 타입 수준 불법 (#4161)
@@ -258,7 +275,8 @@ impl Default for CharShape {
 /// CharShape 비교: raw_data 필드 제외 (라운드트립용 원본 바이트는 논리적 동일성과 무관)
 impl PartialEq for CharShape {
     fn eq(&self, other: &Self) -> bool {
-        self.font_ids == other.font_ids
+        self.text_paint == other.text_paint
+            && self.font_ids == other.font_ids
             && self.ratios == other.ratios
             && self.spacings == other.spacings
             && self.relative_sizes == other.relative_sizes
@@ -423,24 +441,27 @@ impl PartialEq for ParaShape {
 
 impl Eq for ParaShape {}
 
+/// 문단 번호·개요 수준 수. 한/글은 1~10수준을 쓴다(HWP 5.1 번호 레코드의 8~10수준 확장,
+/// HWPX `hh:paraHead` level 1~10).
+pub const NUMBERING_LEVELS: usize = 10;
+
 /// 문단 번호 정의 (HWPTAG_NUMBERING)
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Numbering {
     /// 원본 레코드 바이트 (라운드트립 보존용)
     pub raw_data: Option<Vec<u8>>,
-    /// 수준별(1~7) 문단 머리 정보
-    pub heads: [NumberingHead; 7],
+    /// 수준별(1~10) 문단 머리 정보
+    pub heads: [NumberingHead; NUMBERING_LEVELS],
     /// 수준별 번호 형식 문자열
-    pub level_formats: [String; 7],
+    pub level_formats: [String; NUMBERING_LEVELS],
     /// 시작 번호
     pub start_number: u16,
     /// 수준별 시작 번호
-    pub level_start_numbers: [u32; 7],
+    pub level_start_numbers: [u32; NUMBERING_LEVELS],
     /// HWPX `<hh:numbering>` 의 자식 `<hh:paraHead>` 영역 원본 XML
-    /// (여는/닫는 태그 사이 그대로). 모델은 7수준만 표현하지만 HWPX 는
-    /// 10수준 + align/useInstWidth/autoIndent/checkable/형식문자열 등을
-    /// 가지므로, 무손실 라운드트립을 위해 원본 구간을 그대로 보존해 splice 한다.
-    /// HWP5 바이너리 경로 등 원본 XML 이 없으면 `None` → 하드코딩 폴백.
+    /// (여는/닫는 태그 사이 그대로). HWPX 는 수준 값 외에 checkable 등 모델에 없는
+    /// 속성도 가지므로, 무손실 라운드트립을 위해 원본 구간을 그대로 보존해 splice 한다.
+    /// HWP5 바이너리 경로 등 원본 XML 이 없으면 `None` → 모델 값으로 쓴다.
     pub raw_para_heads: Option<String>,
 }
 
@@ -474,8 +495,11 @@ pub struct Bullet {
     pub char_shape_id: u32,
     /// 글머리표 문자 (●, ■, ▶ 등)
     pub bullet_char: char,
-    /// 이미지 글머리표 여부 (0=문자, ID=이미지)
+    /// HWP의 그림 사용 여부 또는 HWPX의 정규화한 그림 ID. 실제 참조는 `image_reference()`로 읽는다.
     pub image_bullet: i32,
+    /// HWPX에서 그림 사용을 표시했지만 실제 그림 참조가 없는 원본 속성이다.
+    #[serde(skip_serializing)]
+    pub hwpx_image_without_ref: bool,
     /// 이미지 글머리 데이터 (대비, 밝기, 효과, ID)
     pub image_data: [u8; 4],
     /// 체크 글머리표 문자
@@ -484,6 +508,20 @@ pub struct Bullet {
     /// align/useInstWidth/autoIndent/textOffsetType/checkable 등 7수준 필드로 표현
     /// 못하는 HWPX 전용 속성 보존. [#2790]
     pub raw_para_head: Option<String>,
+}
+
+impl Bullet {
+    /// HWP의 그림 사용 값과 그림 데이터에 저장된 BinData 순번은 서로 다르다.
+    /// HWPX에서 읽은 `image_bullet`은 매니페스트를 정규화한 BinData 순번이다.
+    pub fn image_reference(&self) -> Option<u16> {
+        if self.image_bullet <= 0 {
+            return None;
+        }
+        if self.raw_para_head.is_none() {
+            return (self.image_data[3] != 0).then_some(u16::from(self.image_data[3]));
+        }
+        u16::try_from(self.image_bullet).ok().filter(|id| *id > 0)
+    }
 }
 
 /// 텍스트 정렬 방식
@@ -597,6 +635,9 @@ pub struct BorderFill {
     pub fill: Fill,
     /// 3차원 효과 (HWPX borderFill@threeD)
     pub three_d: bool,
+    /// 표 참조 문맥의 자동 분할 경계선 별도 설정(HWPX breakCellSeparateLine).
+    /// 선 종류·굵기·색은 diagonal을 사용하며 네 변·중심선과 구분한다.
+    pub break_cell_separate_line: bool,
 }
 
 /// 중심선 방향 (HWPX borderFill@centerLine)
@@ -718,6 +759,21 @@ pub enum BorderLineType {
     Thin3DReverse,
 }
 
+/// Native cell dot-border metrics, in PDF points. Hancom 2020 Print quantizes
+/// the repeat on its 600dpi device grid. Keep independently measured widths
+/// explicit: unqualified widths must not authenticate a PDF paint conversion.
+pub(crate) fn cell_dot_metrics_pt(width: u8) -> Option<([f64; 2], f64)> {
+    let ticks = match width {
+        3 => [7., 10., 5.],    // 0.2mm
+        5 => [10., 15., 7.],   // 0.3mm
+        7 => [17., 25., 12.],  // 0.5mm
+        11 => [52., 78., 35.], // 1.5mm
+        _ => return None,
+    };
+    let [ink, gap, stroke] = ticks.map(|v| v * 72. / 600.);
+    Some(([ink, gap], stroke))
+}
+
 /// 대각선 정보
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
 pub struct DiagonalLine {
@@ -755,14 +811,99 @@ pub enum FillType {
 }
 
 /// 단색 채우기
-#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
 pub struct SolidFill {
     /// 배경색
     pub background_color: ColorRef,
     /// 무늬색
     pub pattern_color: ColorRef,
-    /// 무늬 종류
+    /// 무늬 종류. HWP 저장값 그대로이며 0~5가 무늬, -1과 그 밖의 값은 무늬 없음이다
+    /// ([`HatchStyle`]).
     pub pattern_type: i32,
+}
+
+impl Default for SolidFill {
+    fn default() -> Self {
+        Self {
+            background_color: 0,
+            pattern_color: 0,
+            pattern_type: HatchStyle::NONE,
+        }
+    }
+}
+
+impl SolidFill {
+    /// 그릴 무늬. 무늬 없음이면 `None`.
+    pub fn hatch(&self) -> Option<HatchStyle> {
+        HatchStyle::from_pattern_type(self.pattern_type)
+    }
+}
+
+/// 채우기 무늬 종류.
+///
+/// HWP 5.0 표 29는 1~6으로 적지만 한컴은 0~5로 저장하고 그린다(한컴 2024 Print,
+/// `hwp_spec_errata.md` 참조). 변형 이름은 그리는 모양을 따른다. OWPML `hatchStyle`의
+/// `SLASH`·`BACK_SLASH`는 이름과 반대 방향으로 그려지므로 [`HatchStyle::owpml_name`]으로만
+/// 대응시킨다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HatchStyle {
+    /// 0 ─ 가로줄
+    Horizontal,
+    /// 1 │ 세로줄
+    Vertical,
+    /// 2 ＼ 왼쪽 위에서 오른쪽 아래로 내려가는 빗금
+    Falling,
+    /// 3 ／ 왼쪽 아래에서 오른쪽 위로 올라가는 빗금
+    Rising,
+    /// 4 ＋ 가로·세로 격자
+    Cross,
+    /// 5 × 빗금 격자
+    DiagonalCross,
+}
+
+impl HatchStyle {
+    /// 무늬 없음 저장값.
+    pub const NONE: i32 = -1;
+
+    pub fn from_pattern_type(value: i32) -> Option<Self> {
+        Some(match value {
+            0 => Self::Horizontal,
+            1 => Self::Vertical,
+            2 => Self::Falling,
+            3 => Self::Rising,
+            4 => Self::Cross,
+            5 => Self::DiagonalCross,
+            _ => return None,
+        })
+    }
+
+    pub fn pattern_type(self) -> i32 {
+        self as i32
+    }
+
+    /// 한컴이 HWP를 HWPX로 저장할 때 쓰는 `hatchStyle` 값.
+    pub fn owpml_name(self) -> &'static str {
+        match self {
+            Self::Horizontal => "HORIZONTAL",
+            Self::Vertical => "VERTICAL",
+            Self::Falling => "SLASH",
+            Self::Rising => "BACK_SLASH",
+            Self::Cross => "CROSS",
+            Self::DiagonalCross => "CROSS_DIAGONAL",
+        }
+    }
+
+    pub fn from_owpml_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "HORIZONTAL" => Self::Horizontal,
+            "VERTICAL" => Self::Vertical,
+            "SLASH" => Self::Falling,
+            "BACK_SLASH" => Self::Rising,
+            "CROSS" => Self::Cross,
+            "CROSS_DIAGONAL" => Self::DiagonalCross,
+            _ => return None,
+        })
+    }
 }
 
 /// 그러데이션 채우기
@@ -862,7 +1003,7 @@ pub struct ShapeBorderLine {
 }
 
 /// 글자 모양 수정 사항 (None이면 해당 속성 변경 안 함)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct CharShapeMods {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
@@ -899,6 +1040,9 @@ pub struct CharShapeMods {
     pub engrave: Option<bool>,
     /// 언어별 개별 글꼴 ID (7개: 한글/영문/한자/일어/기타/기호/사용자)
     pub font_ids: Option<[u16; 7]>,
+    /// 글꼴 이름 (`fontName`). 모양에 직접 적용하지 않고, `DocumentCore::resolve_font_name_mods` 가
+    /// 적용 전에 문서 글꼴 목록에서 찾거나 등록해 `font_ids` 로 바꾼다.
+    pub font_name: Option<String>,
     /// 글자 테두리/배경 ID (1-based, 0=없음)
     pub border_fill_id: Option<u16>,
     /// 강조점 종류 (0~6)
@@ -1032,7 +1176,7 @@ impl CharShapeMods {
 }
 
 /// 문단 모양 수정 사항 (None이면 해당 속성 변경 안 함)
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParaShapeMods {
     pub alignment: Option<Alignment>,
     pub line_spacing: Option<i32>,
@@ -1276,3 +1420,5 @@ mod tests {
         assert_eq!(fill.fill_type, FillType::None);
     }
 }
+
+crate::storage::clone_fields!(DiagonalLine, {diagonal_type, width, color});

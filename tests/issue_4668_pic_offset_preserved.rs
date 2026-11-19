@@ -21,7 +21,7 @@ fn section_xml_of(bytes: &[u8]) -> String {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("ZIP 열기 실패");
     let names: Vec<String> = zip
         .file_names()
-        .map(|n| n.expect("zip 항목 이름").into_owned())
+        .map(|name| name.expect("ZIP 엔트리 이름").into_owned())
         .collect();
     let mut xml = String::new();
     for name in names {

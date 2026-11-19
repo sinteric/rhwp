@@ -26,9 +26,9 @@ pub(crate) struct GeneratedFontRuleProjection {
 pub(crate) const FONT_RULE_LAYOUT_METRIC_SCHEMA_VERSION: &str =
     crate::schema_registry::FONT_RULE_PROJECTION_SCHEMA_VERSION;
 pub(crate) const FONT_RULE_LAYOUT_METRIC_INPUT_SHA256: &str =
-    "e6509d5dcdcec0e412acb1773ca9f510ac4ca8a034f0e6e1556be166f32e673a";
+    "5bba9c3bd699ed1c48db8bd07c23fe0cddf374df443f4d7fbd1d5f83501c5498";
 pub(crate) const FONT_RULE_LAYOUT_METRIC_PROJECTION_SHA256: &str =
-    "10448dda2d70a29dba5346245af09d7e308262e94486e9a3da046b183921c44c";
+    "d94dc47e887607a298bbc729605a9b5aaad7687ec431dd7a5772f74e44dd6d7e";
 
 pub(crate) static FONT_RULE_LAYOUT_METRIC_RULES: &[GeneratedFontRuleProjection] = &[
     GeneratedFontRuleProjection {
@@ -1277,6 +1277,99 @@ pub(crate) static FONT_RULE_LAYOUT_METRIC_RULES: &[GeneratedFontRuleProjection] 
         mode: "direct",
         metric_entry_ids: &["font-metric.f3e4274740daf2960ec1"],
     },
+    GeneratedFontRuleProjection {
+        rule_id: "rule.rust-metric.97a520bd286dc482c765",
+        source_boundary_id: "rust-metric.metric-alias",
+        relation_type: "metric-surrogate",
+        decision_plane: "layout-metric",
+        source_face: Some("Malgun Gothic Bold"),
+        target_face_or_policy: "Malgun Gothic",
+        conditions: GeneratedFontRuleConditions {
+            language_slot: None,
+            alt_type: None,
+            availability: None,
+            profile: None,
+        },
+        order: None,
+        mode: "direct",
+        metric_entry_ids: &[
+            "font-metric.cb5db76c0649913e4438",
+            "font-metric.1beeab194e16e4a6107d",
+        ],
+    },
+    GeneratedFontRuleProjection {
+        rule_id: "rule.rust-metric.d3b78b2bdea7d0531b5f",
+        source_boundary_id: "rust-metric.metric-alias",
+        relation_type: "metric-surrogate",
+        decision_plane: "layout-metric",
+        source_face: Some("Arial Bold"),
+        target_face_or_policy: "Arial",
+        conditions: GeneratedFontRuleConditions {
+            language_slot: None,
+            alt_type: None,
+            availability: None,
+            profile: None,
+        },
+        order: None,
+        mode: "direct",
+        metric_entry_ids: &[
+            "font-metric.b5fafcd791a4af142ef1",
+            "font-metric.6edd92d6f8127459749a",
+            "font-metric.a94242c0b0f23c0e97fd",
+            "font-metric.a04310c5f53100889fc3",
+        ],
+    },
+    GeneratedFontRuleProjection {
+        rule_id: "rule.rust-metric.issue-7445.public-batang-name",
+        source_boundary_id: "rust-metric.metric-alias",
+        relation_type: "metric-surrogate",
+        decision_plane: "layout-metric",
+        source_face: Some("RHWP Public Batang"),
+        target_face_or_policy: "Batang",
+        conditions: GeneratedFontRuleConditions {
+            language_slot: None,
+            alt_type: None,
+            availability: None,
+            profile: None,
+        },
+        order: None,
+        mode: "direct",
+        metric_entry_ids: &["font-metric.edec2573883b7b4dc023"],
+    },
+    GeneratedFontRuleProjection {
+        rule_id: "rule.rust-metric.ygodic250-name",
+        source_boundary_id: "rust-metric.metric-alias",
+        relation_type: "metric-surrogate",
+        decision_plane: "layout-metric",
+        source_face: Some("한컴 윤고딕 250"),
+        target_face_or_policy: "Haan YGodic 250",
+        conditions: GeneratedFontRuleConditions {
+            language_slot: None,
+            alt_type: None,
+            availability: None,
+            profile: None,
+        },
+        order: None,
+        mode: "direct",
+        metric_entry_ids: &["font-metric.ea8ba5aeaa3b69983623"],
+    },
+    GeneratedFontRuleProjection {
+        rule_id: "rule.rust-metric.hyhaeseo-korean-name",
+        source_boundary_id: "rust-metric.metric-alias",
+        relation_type: "metric-surrogate",
+        decision_plane: "layout-metric",
+        source_face: Some("한양해서"),
+        target_face_or_policy: "HYhaeseo",
+        conditions: GeneratedFontRuleConditions {
+            language_slot: None,
+            alt_type: None,
+            availability: None,
+            profile: None,
+        },
+        order: None,
+        mode: "direct",
+        metric_entry_ids: &["font-metric.b1a0dbd28c348a3b31e6"],
+    },
 ];
 
 #[rustfmt::skip]
@@ -1487,6 +1580,21 @@ pub(crate) fn find_font_rule_layout_metric(
         }
         "한컴 윤고딕 230" => {
             Some(&FONT_RULE_LAYOUT_METRIC_RULES[67])
+        }
+        "Malgun Gothic Bold" => {
+            Some(&FONT_RULE_LAYOUT_METRIC_RULES[68])
+        }
+        "Arial Bold" => {
+            Some(&FONT_RULE_LAYOUT_METRIC_RULES[69])
+        }
+        "RHWP Public Batang" => {
+            Some(&FONT_RULE_LAYOUT_METRIC_RULES[70])
+        }
+        "한컴 윤고딕 250" => {
+            Some(&FONT_RULE_LAYOUT_METRIC_RULES[71])
+        }
+        "한양해서" => {
+            Some(&FONT_RULE_LAYOUT_METRIC_RULES[72])
         }
         _ => None,
     }

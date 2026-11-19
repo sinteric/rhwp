@@ -365,6 +365,7 @@ export class CellBorderBgDialog extends ModalDialog {
     return frag;
   }
 
+  private borderPaintSides = [false, false, false, false];
   private applyBorderDir(dirIdx: number): void {
     const val = {
       type: this.borderSelectedLineType,
@@ -372,8 +373,10 @@ export class CellBorderBgDialog extends ModalDialog {
       color: this.borderColorInput.value,
     };
     if (dirIdx === 4) {
+      this.borderPaintSides.fill(true);
       this.borderEdits = [val, val, val, val];
     } else {
+      this.borderPaintSides[dirIdx] = true;
       this.borderEdits[dirIdx] = val;
     }
   }
@@ -496,8 +499,9 @@ export class CellBorderBgDialog extends ModalDialog {
     const patTypeRow = this.row();
     patTypeRow.appendChild(this.label(i18nText('dialog.cellBorderBg.label.label.x0829e0')));
     this.bgPatternTypeSelect = this.selectOptions([
-      ['0', i18nText('dialog.cellBorderBg.selectOptions.label')], ['1', i18nText('dialog.cellBorderBg.selectOptions.label.xd965c1')], ['2', i18nText('dialog.cellBorderBg.selectOptions.label.x7842b4')], ['3', i18nText('dialog.cellBorderBg.selectOptions.label.xf14cb1')],
-      ['4', i18nText('dialog.cellBorderBg.selectOptions.label.xcf200e')], ['5', i18nText('dialog.cellBorderBg.buildBackgroundTab.label')], ['6', i18nText('dialog.cellBorderBg.buildBackgroundTab.label.x432dc9')],
+      // HWP 무늬 종류: -1=없음, 0~5 = ─ │ ＼ ／ ＋ × (#8978)
+      ['-1', i18nText('dialog.cellBorderBg.selectOptions.label')], ['0', i18nText('dialog.cellBorderBg.selectOptions.label.xd965c1')], ['1', i18nText('dialog.cellBorderBg.selectOptions.label.x7842b4')], ['2', i18nText('dialog.cellBorderBg.selectOptions.label.xf14cb1')],
+      ['3', i18nText('dialog.cellBorderBg.selectOptions.label.xcf200e')], ['4', i18nText('dialog.cellBorderBg.buildBackgroundTab.label')], ['5', i18nText('dialog.cellBorderBg.buildBackgroundTab.label.x432dc9')],
     ]);
     this.bgPatternTypeSelect.addEventListener('change', () => {
       this.bgColorRadio.checked = true;
@@ -528,18 +532,18 @@ export class CellBorderBgDialog extends ModalDialog {
     }
     const faceColor = this.bgColorPicker.value;
     const patType = parseInt(this.bgPatternTypeSelect.value, 10);
-    if (patType === 0) {
+    if (patType < 0) {
       this.bgPreviewBox.style.background = faceColor;
       return;
     }
     const patColor = this.bgPatternColorPicker.value;
     const patternMap: Record<number, string> = {
-      1: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
-      2: `repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
+      0: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
+      1: `repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
+      2: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,
       3: `repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,
-      4: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,
-      5: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px),repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
-      6: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px),repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,
+      4: `repeating-linear-gradient(0deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px),repeating-linear-gradient(90deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 4px)`,
+      5: `repeating-linear-gradient(45deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px),repeating-linear-gradient(135deg,${patColor} 0px,${patColor} 1px,transparent 1px,transparent 5px)`,
     };
     this.bgPreviewBox.style.background = `${patternMap[patType] || ''},${faceColor}`;
   }
@@ -935,6 +939,7 @@ export class CellBorderBgDialog extends ModalDialog {
   // ─── 필드 채우기 ────────────────────────────
 
   private populateFields(): void {
+    this.borderPaintSides.fill(false);
     const cp = this.cellProps;
 
     // 테두리
@@ -948,6 +953,7 @@ export class CellBorderBgDialog extends ModalDialog {
     this.updateBorderPreview();
 
     // 배경
+    this.bgPatternTypeSelect.value = '-1';
     if (cp.fillType === 'solid' && cp.fillColor) {
       this.bgColorRadio.checked = true;
       this.bgColorPicker.value = cp.fillColor;
@@ -999,6 +1005,7 @@ export class CellBorderBgDialog extends ModalDialog {
     newProps.borderRight = this.borderEdits[1];
     newProps.borderTop = this.borderEdits[2];
     newProps.borderBottom = this.borderEdits[3];
+    newProps.borderPaintSides = [...this.borderPaintSides];
 
     // 배경
     if (this.bgColorRadio.checked) {

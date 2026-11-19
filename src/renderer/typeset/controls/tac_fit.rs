@@ -71,21 +71,24 @@ pub(super) fn prepare(
         .then(|| {
             para.controls.iter().enumerate().find_map(|(ci, ctrl)| {
                 let Control::Table(t) = ctrl else { return None };
+                let measured = measured_tables.iter().find(|measured| {
+                    measured.para_index == para_idx && measured.control_index == ci
+                })?;
                 if !flow.is_effective_tac_table(para, t, fmt)
                     || !(flow.session_edited()
-                        || flow.single_tac_line_has_unstored_cell_text(para, t, fmt, tac_count))
+                        || flow.single_tac_line_has_current_cell_rows(
+                            para,
+                            t,
+                            fmt,
+                            tac_count,
+                            &measured.cells,
+                        ))
                 {
                     return None;
                 }
                 let declared = hwpunit_to_px(t.common.height as i32, dpi);
-                measured_tables
-                    .iter()
-                    .find(|m| m.para_index == para_idx && m.control_index == ci)
-                    .filter(|m| {
-                        let tolerance = if flow.session_edited() { 8.0 } else { 0.5 };
-                        m.total_height > declared + tolerance
-                    })
-                    .map(|m| m.total_height)
+                let tolerance = if flow.session_edited() { 8.0 } else { 0.5 };
+                (measured.total_height > declared + tolerance).then_some(measured.total_height)
             })
         })
         .flatten();
@@ -132,7 +135,10 @@ pub(super) fn prepare(
                 _ => None,
             })
             .fold(0.0f64, f64::max);
-        let base = first_line_tac_height.unwrap_or(fmt.height_for_fit) + tac_outer_margin_px;
+        // 저장 줄 없는 문단의 `height_for_fit` 에는 format 이 이미 같은 여백을 더했다
+        // (`tac_outer_margin_v_px`). 두 번 더하면 쪽 끝에 들어가는 표를 다음 쪽으로 민다.
+        let base = first_line_tac_height.unwrap_or(fmt.height_for_fit - fmt.tac_outer_margin_v_px)
+            + tac_outer_margin_px;
         measured_tac_floor.map_or(base, |grown| base.max(grown))
     } else {
         fmt.total_height
@@ -193,7 +199,8 @@ pub(super) fn prepare(
                         _ => false,
                     })
             })
-            .map(|ti| (0..ti).map(|li| fmt.line_advance(li)).sum::<f64>())
+            // 쪽 끝 줄은 줄 높이까지만 들어가면 된다. 리셋 앞 마지막 줄의 줄간격은 세지 않는다.
+            .map(|ti| fmt.line_content_height(0..ti, 0.0))
     } else {
         None
     };
@@ -208,9 +215,9 @@ pub(super) fn prepare(
             return false;
         };
         flow.tac_table_line_index(para, table, fmt)
-            .filter(|&owner| crate::renderer::composer::ordinary_tac_prefix_rows(para, owner))
+            .filter(|&owner| crate::renderer::composer::owned_tac_prefix_rows(para, owner))
             .is_some_and(|owner| {
-                page.current_height + fmt.line_advances_sum(0..owner) <= available_height()
+                page.current_height + fmt.line_content_height(0..owner, 0.0) <= available_height()
             })
     });
     let advance_before_place = page.current_height + height_for_fit > available_height()

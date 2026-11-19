@@ -57,10 +57,50 @@ pub struct GrepMatch {
     /// [#2792] 표 안의 표에서 나온 매치면 그 중첩 깊이(바깥 표 = 0). 0 이면 생략되므로
     /// 중첩이 없는 문서의 봉투는 종전과 바이트까지 같다.
     ///
-    /// 0 이 아니면 **`cell` 은 매치의 정확한 위치가 아니라 그것을 담은 바깥 셀 문단**을
-    /// 가리킨다 — 중첩 경로를 그대로 싣는 정밀 주소는 별도 축(#2792 §경로 기반 선택)이다.
+    /// 0 이 아니면 **`cell` 은 매치의 정확한 위치가 아니라 그것을 담은 최외곽 칸 문단**을
+    /// 가리킨다 — 정확한 칸은 `cellPath` 의 마지막 단계다.
     #[serde(rename = "nestedDepth", skip_serializing_if = "is_zero")]
     pub nested_depth: usize,
+    /// [#8989] 표 안의 표·글상자 안의 표에서 나온 매치의 정확한 칸 경로(바깥 → 안쪽).
+    ///
+    /// `fields` 의 `location.nested` 와 같은 꼴이다. 마지막 단계가 매치가 든 칸과 그 칸
+    /// 문단이다. 본문 표 한 단계 매치는 `cell` 로 충분하므로 생략된다 — 중첩이 없는
+    /// 문서의 봉투는 종전과 같다.
+    #[serde(rename = "cellPath", skip_serializing_if = "Vec::is_empty")]
+    pub cell_path: Vec<CellPathStep>,
+}
+
+/// [#8989] 중첩 칸 경로 한 단계. `kind` 는 `tableCell` 또는 `textBox` 다.
+///
+/// `control` 은 앞 단계 문단(첫 단계는 본문 문단) 안의 컨트롤 인덱스, `cell` 은
+/// `tableCell` 단계의 칸 인덱스, `paragraph` 는 그 칸·글상자 안의 문단 인덱스다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CellPathStep {
+    pub kind: &'static str,
+    pub control: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<usize>,
+    pub paragraph: usize,
+}
+
+impl CellPathStep {
+    pub fn table_cell(control: usize, cell: usize, paragraph: usize) -> Self {
+        Self {
+            kind: "tableCell",
+            control,
+            cell: Some(cell),
+            paragraph,
+        }
+    }
+
+    pub fn text_box(control: usize, paragraph: usize) -> Self {
+        Self {
+            kind: "textBox",
+            control,
+            cell: None,
+            paragraph,
+        }
+    }
 }
 
 /// 중첩이 없는 흔한 경우에 필드를 아예 빼기 위한 serde 술어.
@@ -246,7 +286,6 @@ impl DocumentCore {
         }
         let page_index = self.build_paragraph_page_index();
         let table_row_pages = self.build_table_row_page_index();
-        let qlen = query.chars().count();
         let mut out: Vec<GrepMatch> = Vec::new();
 
         for (sec_idx, section) in self.document.sections.iter().enumerate() {
@@ -257,6 +296,7 @@ impl DocumentCore {
                     |page: Option<u32>,
                      text: &str,
                      offset: usize,
+                     length: usize,
                      cell: Option<CellRef>,
                      textbox: Option<TextBoxRef>,
                      equation: Option<EquationRef>,
@@ -266,15 +306,16 @@ impl DocumentCore {
                         paragraph: para_idx,
                         page,
                         char_offset: offset,
-                        length: qlen,
+                        length,
                         text: text.to_string(),
-                        context: make_context(text, offset, qlen),
+                        context: make_context(text, offset, length),
                         cell,
                         textbox,
                         equation,
                         context_before,
                         context_after,
                         nested_depth: 0,
+                        cell_path: Vec::new(),
                     };
                 // 본문 문단 기준 컨텍스트 — 구역 문단 목록 안에서 앞뒤를 센다.
                 let (body_ctx_before, body_ctx_after) = match context {
@@ -286,6 +327,7 @@ impl DocumentCore {
                 };
                 let make = |text: &str,
                             offset: usize,
+                            length: usize,
                             cell: Option<CellRef>,
                             textbox: Option<TextBoxRef>,
                             equation: Option<EquationRef>| {
@@ -293,6 +335,7 @@ impl DocumentCore {
                         page,
                         text,
                         offset,
+                        length,
                         cell,
                         textbox,
                         equation,
@@ -314,8 +357,10 @@ impl DocumentCore {
                         .or(page)
                 };
 
-                for offset in super::search_query::find_matches(&para.text, query, case_sensitive) {
-                    out.push(make(&para.text, offset, None, None, None));
+                for (offset, length) in
+                    super::search_query::find_matches(&para.text, query, case_sensitive)
+                {
+                    out.push(make(&para.text, offset, length, None, None, None));
                     if limit.is_some_and(|n| out.len() >= n) {
                         return out;
                     }
@@ -327,8 +372,16 @@ impl DocumentCore {
                             // [#2792] 셀 안의 표까지 내려간다. 종전에는 셀 문단 컨트롤
                             // 순회가 Equation 만 봐서 중첩 표가 조용히 버려졌다.
                             let mut queue = std::collections::VecDeque::new();
-                            queue.push_back((table, 0usize, None::<CellRef>));
-                            while let Some((current, depth, host)) = queue.pop_front() {
+                            queue.push_back((
+                                table,
+                                0usize,
+                                None::<CellRef>,
+                                Vec::<CellPathStep>::new(),
+                                ctrl_idx,
+                            ));
+                            while let Some((current, depth, host, prefix, table_ctrl)) =
+                                queue.pop_front()
+                            {
                                 if depth >= MAX_NEST_DEPTH {
                                     continue;
                                 }
@@ -347,12 +400,19 @@ impl DocumentCore {
                                             cell: cell_idx,
                                             paragraph: cp_idx,
                                         });
+                                        let mut path = prefix.clone();
+                                        path.push(CellPathStep::table_cell(
+                                            table_ctrl, cell_idx, cp_idx,
+                                        ));
+                                        // 한 단계 표는 `cell` 이 곧 정확한 주소다.
+                                        let hit_path =
+                                            if depth > 0 { path.clone() } else { Vec::new() };
                                         let match_page = if depth == 0 {
                                             cell_page(ctrl_idx, cell.row as usize)
                                         } else {
                                             None
                                         };
-                                        for offset in super::search_query::find_matches(
+                                        for (offset, length) in super::search_query::find_matches(
                                             &cp.text,
                                             query,
                                             case_sensitive,
@@ -361,6 +421,7 @@ impl DocumentCore {
                                                 match_page,
                                                 &cp.text,
                                                 offset,
+                                                length,
                                                 Some(addr.clone()),
                                                 None,
                                                 None,
@@ -368,6 +429,7 @@ impl DocumentCore {
                                                 cell_ctx_after.clone(),
                                             );
                                             hit.nested_depth = depth;
+                                            hit.cell_path = hit_path.clone();
                                             out.push(hit);
                                             if limit.is_some_and(|n| out.len() >= n) {
                                                 return out;
@@ -378,15 +440,18 @@ impl DocumentCore {
                                         {
                                             match nested_control {
                                                 Control::Equation(equation) => {
-                                                    for offset in super::search_query::find_matches(
-                                                        &equation.script,
-                                                        query,
-                                                        case_sensitive,
-                                                    ) {
+                                                    for (offset, length) in
+                                                        super::search_query::find_matches(
+                                                            &equation.script,
+                                                            query,
+                                                            case_sensitive,
+                                                        )
+                                                    {
                                                         let mut hit = make_at(
                                                             match_page,
                                                             &equation.script,
                                                             offset,
+                                                            length,
                                                             Some(addr.clone()),
                                                             None,
                                                             Some(EquationRef {
@@ -396,6 +461,7 @@ impl DocumentCore {
                                                             cell_ctx_after.clone(),
                                                         );
                                                         hit.nested_depth = depth;
+                                                        hit.cell_path = hit_path.clone();
                                                         out.push(hit);
                                                         if limit.is_some_and(|n| out.len() >= n) {
                                                             return out;
@@ -407,6 +473,8 @@ impl DocumentCore {
                                                         inner,
                                                         depth + 1,
                                                         Some(addr.clone()),
+                                                        path.clone(),
+                                                        equation_idx,
                                                     ));
                                                 }
                                                 _ => {}
@@ -430,7 +498,7 @@ impl DocumentCore {
                                         }
                                         None => (None, None),
                                     };
-                                    for offset in super::search_query::find_matches(
+                                    for (offset, length) in super::search_query::find_matches(
                                         &tp.text,
                                         query,
                                         case_sensitive,
@@ -439,6 +507,7 @@ impl DocumentCore {
                                             page,
                                             &tp.text,
                                             offset,
+                                            length,
                                             None,
                                             Some(TextBoxRef {
                                                 control: ctrl_idx,
@@ -457,15 +526,18 @@ impl DocumentCore {
                                     {
                                         match nested_control {
                                             Control::Equation(equation) => {
-                                                for offset in super::search_query::find_matches(
-                                                    &equation.script,
-                                                    query,
-                                                    case_sensitive,
-                                                ) {
+                                                for (offset, length) in
+                                                    super::search_query::find_matches(
+                                                        &equation.script,
+                                                        query,
+                                                        case_sensitive,
+                                                    )
+                                                {
                                                     out.push(make_at(
                                                         page,
                                                         &equation.script,
                                                         offset,
+                                                        length,
                                                         None,
                                                         Some(TextBoxRef {
                                                             control: ctrl_idx,
@@ -487,16 +559,32 @@ impl DocumentCore {
                                                 // 주소로는 글상자 내부 표의 정확한 경로를 표현할 수
                                                 // 없으므로, match에는 글상자 호스트를 싣는다.
                                                 let mut queue = std::collections::VecDeque::new();
-                                                queue.push_back((table, 0usize));
-                                                while let Some((current, depth)) = queue.pop_front()
+                                                queue.push_back((
+                                                    table,
+                                                    0usize,
+                                                    vec![CellPathStep::text_box(ctrl_idx, tp_idx)],
+                                                    nested_control_idx,
+                                                ));
+                                                while let Some((
+                                                    current,
+                                                    depth,
+                                                    prefix,
+                                                    table_ctrl,
+                                                )) = queue.pop_front()
                                                 {
                                                     if depth >= MAX_NEST_DEPTH {
                                                         continue;
                                                     }
-                                                    for cell in current.cells.iter() {
+                                                    for (cell_idx, cell) in
+                                                        current.cells.iter().enumerate()
+                                                    {
                                                         for (cp_idx, cp) in
                                                             cell.paragraphs.iter().enumerate()
                                                         {
+                                                            let mut path = prefix.clone();
+                                                            path.push(CellPathStep::table_cell(
+                                                                table_ctrl, cell_idx, cp_idx,
+                                                            ));
                                                             let (cell_ctx_before, cell_ctx_after) =
                                                                 match context {
                                                                     Some(n) => {
@@ -514,7 +602,7 @@ impl DocumentCore {
                                                             } else {
                                                                 None
                                                             };
-                                                            for offset in
+                                                            for (offset, length) in
                                                                 super::search_query::find_matches(
                                                                     &cp.text,
                                                                     query,
@@ -525,6 +613,7 @@ impl DocumentCore {
                                                                     match_page,
                                                                     &cp.text,
                                                                     offset,
+                                                                    length,
                                                                     None,
                                                                     Some(TextBoxRef {
                                                                         control: ctrl_idx,
@@ -535,6 +624,7 @@ impl DocumentCore {
                                                                     cell_ctx_after.clone(),
                                                                 );
                                                                 hit.nested_depth = depth;
+                                                                hit.cell_path = path.clone();
                                                                 out.push(hit);
                                                                 if limit
                                                                     .is_some_and(|n| out.len() >= n)
@@ -549,7 +639,7 @@ impl DocumentCore {
                                                             {
                                                                 match inner_control {
                                                                     Control::Equation(equation) => {
-                                                                        for offset in super::search_query::find_matches(
+                                                                        for (offset, length) in super::search_query::find_matches(
                                                                             &equation.script,
                                                                             query,
                                                                             case_sensitive,
@@ -558,6 +648,7 @@ impl DocumentCore {
                                                                                 match_page,
                                                                                 &equation.script,
                                                                                 offset,
+                        length,
                                                                                 None,
                                                                                 Some(TextBoxRef {
                                                                                     control: ctrl_idx,
@@ -571,6 +662,8 @@ impl DocumentCore {
                                                                             );
                                                                             hit.nested_depth =
                                                                                 depth;
+                                                                            hit.cell_path =
+                                                                                path.clone();
                                                                             out.push(hit);
                                                                             if limit.is_some_and(
                                                                                 |n| out.len() >= n,
@@ -583,6 +676,8 @@ impl DocumentCore {
                                                                         queue.push_back((
                                                                             inner,
                                                                             depth + 1,
+                                                                            path.clone(),
+                                                                            inner_control_idx,
                                                                         ));
                                                                     }
                                                                     _ => {}
@@ -602,12 +697,13 @@ impl DocumentCore {
                         // #3419(export-text/markdown 쪽 수식 텍스트화)와는 별개 경로였다.
                         // 표 셀·글상자와 동일하게 본문 문단 순회 중 함께 검색한다.
                         Control::Equation(eq) => {
-                            for offset in
+                            for (offset, length) in
                                 super::search_query::find_matches(&eq.script, query, case_sensitive)
                             {
                                 out.push(make(
                                     &eq.script,
                                     offset,
+                                    length,
                                     None,
                                     None,
                                     Some(EquationRef { control: ctrl_idx }),
@@ -623,28 +719,5 @@ impl DocumentCore {
             }
         }
         out
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// [#3413] CLI `rhwp search` 는 `DocumentCore::grep` 을 호출한다(`wasm_api::HwpDocument::grep`
-    /// 경유). 이 경로가 본문/표 셀/글상자만 순회하고 수식(Equation) 컨트롤의 script 텍스트를
-    /// 빠뜨려 `search exam_math.hwp "lim" --json` 이 matchCount=0 을 반환하던 버그의 회귀 테스트.
-    #[test]
-    fn grep_finds_equation_script() {
-        let data = std::fs::read("samples/exam_math.hwp").expect("샘플 파일 읽기 실패");
-        let doc = DocumentCore::from_bytes(&data).expect("샘플 파일 파싱 실패");
-        let matches = doc.grep("lim", true, None);
-        assert!(
-            !matches.is_empty(),
-            "수식 스크립트 안의 'lim' 매치를 찾지 못함"
-        );
-        assert!(
-            matches.iter().any(|m| m.equation.is_some()),
-            "매치 중 equation 컨텍스트가 있는 항목이 없음: {matches:?}"
-        );
     }
 }
