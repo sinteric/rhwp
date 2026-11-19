@@ -1,0 +1,41 @@
+name: Hanji fork checks
+
+# The quick checks for this fork's Hanji patches. sinteric/hanji keeps the same
+# list in scripts/sync-forks.py (FORKS) and runs it before every upstream sync
+# PR. Hanji's own CI on the pin bump is the full gate (docs/fork-sync.md there).
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hanji-fork-checks-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Hanji fork checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # rust-toolchain.toml pins the toolchain; rustup installs it on first use.
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266
+      - name: Hanji's build (no default features)
+        run: cargo check --locked --lib --no-default-features
+      - name: Fork contract tests
+        run: |
+          node scripts/rust-test-suite-manifest.mjs --prepare > /dev/null
+          for module in issue_598_footnote_marker_nav hanji_rust199_compatibility; do
+            suite=$(grep -l "^mod ${module};$" tests/generated/*.rs | head -1)
+            test -n "$suite" || { echo "no generated suite holds ${module}"; exit 1; }
+            cargo test --locked --test "$(basename "$suite" .rs)" "${module}::"
+          done
